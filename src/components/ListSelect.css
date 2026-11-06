@@ -1,0 +1,14 @@
+.list-select{display:inline-flex;align-items:center;justify-content:space-between;gap:10px;min-width:0;min-height:32px;padding:6px 10px;border:1px solid #dfe3e8;border-radius:6px;background:#fff;color:#687180;font-size:11px;font-weight:400;line-height:18px;text-align:left;cursor:pointer}
+.list-select>span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-select>svg{flex-shrink:0;transform:rotate(90deg);color:#929ba8}
+.list-select.is-open>svg{transform:rotate(-90deg)}
+.list-select.is-open{border-color:#858d98;box-shadow:0 0 0 2px #858d9818}
+.list-select:disabled{cursor:default;opacity:.5}
+.select-list{position:fixed;z-index:1200;overflow:auto;overscroll-behavior:contain;padding:5px;background:#fff;border:1px solid #e8e8e8;border-radius:6px;box-shadow:0 5px 12px #00000014}
+.select-list>button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:34px;padding:7px 10px;border:0;border-radius:3px;background:transparent;text-align:left;color:#41464e;font-size:11px;line-height:20px;cursor:pointer}
+.select-list>button>span{min-width:0;overflow-wrap:anywhere}
+.select-list>button>svg{flex-shrink:0;color:#454b54}
+.select-list>button.is-selected{background:#ededed}
+.select-list>button.is-focused,.select-list>button:hover{background:#f4f4f4}
+.select-list>button:disabled{color:#adb0b5;cursor:default}
+.select-list>p{padding:8px;font-size:11px;color:#929ba8}

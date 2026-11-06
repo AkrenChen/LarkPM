@@ -1,0 +1,2 @@
+.banner.notification-toast{position:fixed;top:20px;right:24px;z-index:1100;width:max-content;max-width:calc(100vw - 48px);margin:0;padding:11px 14px;border-radius:9px;box-shadow:0 5px 22px #2532471c}
+.notification-toast>span{min-width:0;overflow-wrap:anywhere}.notification-toast>svg,.notification-toast>.icon-button{flex-shrink:0}

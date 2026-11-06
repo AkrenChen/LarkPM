@@ -1,0 +1,16 @@
+async page => {
+  await page.getByRole('combobox', {name:'工作状态',exact:true}).selectOption('done');
+  await page.getByRole('button', {name:'保存修改',exact:true}).click();
+  await page.getByRole('button', {name:'转为 LinkinNotes 个人待办',exact:true}).click();
+  await page.getByRole('button', {name:'已关联，不会重复创建',exact:true}).waitFor();
+  await page.getByRole('textbox', {name:'分支任务标题',exact:true}).fill('切摆检查分支');
+  await page.getByRole('button', {name:'创建',exact:true}).click();
+  await page.getByRole('heading', {name:'切摆检查分支',exact:true}).waitFor();
+  await page.getByRole('button', {name:'关闭任务详情',exact:true}).click();
+  await page.getByRole('button', {name:'个人工作台',exact:true}).click();
+  await page.screenshot({path:'output/playwright/personal.png'});
+  await page.getByRole('button', {name:'项目与连接',exact:true}).click();
+  await page.getByRole('heading', {name:'项目需求表',exact:true}).waitFor();
+  await page.screenshot({path:'output/playwright/settings.png'});
+  return {result:'task completion, link, branch, personal view and configurable project settings passed'};
+}

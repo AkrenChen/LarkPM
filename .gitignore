@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release/
+build/
+src-tauri/target/
+src-tauri/sidecar/
+__pycache__/
+*.pyc
+*.spec
+*.db*
+.env*
+*.tsbuildinfo
+.local/
+.playwright-cli/
+output/
+src-tauri/gen/

@@ -1,0 +1,50 @@
+async page => {
+  const chooseDepartment = async (label, name) => {
+    await page.getByRole('combobox',{name:label,exact:true}).click();
+    await page.getByRole('listbox',{name:label+'选项',exact:true}).getByRole('option',{name,exact:true}).click();
+  };
+  await page.reload();
+  if (await page.getByRole('button', {name:'载入流程示例',exact:true}).count()) {
+    await page.getByRole('button', {name:'载入流程示例',exact:true}).click();
+    await page.locator('.task-card').first().waitFor();
+  }
+  await page.getByRole('button', {name:'设置',exact:true}).click();
+  await page.getByRole('button', {name:'使用者',exact:true}).click();
+  await page.getByRole('textbox', {name:'使用者名称',exact:true}).fill('测试使用者');
+  await page.getByRole('combobox', {name:'关联飞书人员',exact:true}).selectOption('UI');
+  if (await page.getByRole('button', {name:'保存设置',exact:true}).isEnabled()) await page.getByRole('button', {name:'保存设置',exact:true}).click();
+  await page.getByRole('button', {name:'人员与部门',exact:true}).click();
+  await chooseDepartment('UI的默认部门（UI）','UI');
+  await page.waitForTimeout(4500);
+  if (await page.getByRole('combobox', {name:'UI的默认部门（UI）',exact:true}).innerText() !== 'UI') throw new Error('Polling discarded department draft');
+  if (await page.getByRole('button', {name:'保存设置',exact:true}).isEnabled()) await page.getByRole('button', {name:'保存设置',exact:true}).click();
+  await page.getByRole('button', {name:'项目与连接',exact:true}).click();
+  await page.getByRole('heading', {name:'项目需求表',exact:true}).waitFor();
+  await page.getByRole('heading', {name:'飞书账号授权',exact:true}).waitFor();
+  await page.getByRole('button', {name:'个人工作台',exact:true}).click();
+  await page.getByRole('button', {name:'我的任务',exact:true}).click();
+  if (await page.getByRole('combobox', {name:'按处理人筛选',exact:true}).inputValue() !== 'UI') throw new Error('My tasks did not use stable person ID');
+  await page.getByRole('button', {name:'新建本地任务',exact:true}).click();
+  await page.getByRole('textbox', {name:'任务标题',exact:true}).fill('部门自动带出回归');
+  await page.getByRole('button', {name:'创建任务',exact:true}).click();
+  await page.getByRole('combobox', {name:'添加已有处理人',exact:true}).selectOption('UI');
+  if (await page.locator('.department-preview').innerText() !== 'UI') throw new Error('Owner department not filled');
+  await page.getByRole('checkbox', {name:'使用人员默认部门',exact:true}).uncheck();
+  await chooseDepartment('手动指定部门','开发');
+  await page.getByRole('button', {name:'保存修改',exact:true}).click();
+  await page.getByRole('button', {name:'关闭任务详情',exact:true}).click();
+  await page.locator('.task-row-main').filter({hasText:'部门自动带出回归'}).click();
+  if (!(await page.locator('.department-tags').innerText()).includes('开发')) throw new Error('Manual departments not persisted');
+  await page.getByRole('checkbox', {name:'使用人员默认部门',exact:true}).check();
+  if (await page.locator('.department-preview').innerText() !== 'UI') throw new Error('Default departments not restored');
+  await page.getByRole('button', {name:'保存修改',exact:true}).click();
+  await page.getByRole('button', {name:'关闭任务详情',exact:true}).click();
+  await page.reload();
+  await page.getByRole('button', {name:'设置',exact:true}).click();
+  await page.getByRole('button', {name:'使用者',exact:true}).click();
+  if (await page.getByRole('textbox', {name:'使用者名称',exact:true}).inputValue() !== '测试使用者') throw new Error('Profile not persisted');
+  await page.getByRole('button', {name:'人员与部门',exact:true}).click();
+  if (await page.getByRole('combobox', {name:'UI的默认部门（UI）',exact:true}).innerText() !== 'UI') throw new Error('Person department not persisted');
+  await page.screenshot({path:'output/playwright/settings-hub.png'});
+  return {result:'settings, profile identity, stable-ID filtering, department defaults, overrides, persistence and connection entry passed'};
+}

@@ -1,0 +1,6 @@
+.personal-batchbar{display:flex;align-items:center;gap:14px;margin-bottom:12px;color:#929ba8;font-size:11px}
+.personal-batchbar>label{display:flex;align-items:center;gap:6px;color:#737e8c;cursor:pointer}
+.personal-batchbar input,.task-row>.personal-select{width:13px;height:13px;margin:0;accent-color:#748c65;flex-shrink:0;cursor:pointer}
+.personal-batchbar>.button{margin-left:auto;font-size:11px}
+.task-row>.personal-select:disabled{cursor:default;opacity:.4}
+.personal-linked{display:inline-flex;align-items:center;color:#7c9688}

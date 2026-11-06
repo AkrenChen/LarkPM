@@ -1,0 +1,62 @@
+async page => {
+  const api = async (method,params={}) => {
+    const r=await page.request.post(new URL('/rpc',page.url()).href,{data:{method,params}});
+    const v=await r.json();if(v.error)throw new Error(v.error);return v.result;
+  };
+  const p=await api('project_save',{name:'标签样式回归',base_token:'fixture',table_id:'tags'});
+  await api('create',{project:p.id,title:'标签详情测试',owners:[{id:'test-tags',name:'标签测试'}]});
+  await api('departments_sync',{project:p.id});
+  const settings=(await api('snapshot')).settings;
+  await api('settings_save',{...settings,people:[{id:'test-tags',name:'标签测试',department:'开发'}]});
+  await page.evaluate(id=>localStorage.setItem('larkpm-project',id),p.id);
+  await page.reload();
+  await page.getByRole('button',{name:'设置',exact:true}).click();
+  await page.getByRole('button',{name:'人员与部门',exact:true}).click();
+  const trigger=page.getByRole('combobox',{name:'标签测试的默认部门（test-tags）',exact:true});
+  await trigger.click();
+  const menu=page.getByRole('listbox',{name:'标签测试的默认部门（test-tags）选项',exact:true});
+  await menu.waitFor({timeout:3000});
+  const hues={'开发':199,'美术':328,'UI':46,'策划':70,'动效':172,'3D':27};
+  const rgb=s=>s.match(/\d+/g).slice(0,3).map(Number);
+  const luminance=rgb=>rgb.map(v=>v/255).map(v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4).reduce((n,v,i)=>n+v*[0.2126,0.7152,0.0722][i],0);
+  const hue=rgb=>{const [r,g,b]=rgb;const max=Math.max(...rgb),min=Math.min(...rgb),d=max-min;return d===0?0:((max===r?(g-b)/d:max===g?(b-r)/d+2:(r-g)/d+4)*60+360)%360;};
+  for(const [name,themeHue] of Object.entries(hues)) {
+    const tag=menu.getByRole('option',{name,exact:true}).locator('.department-tag');
+    const pair=await tag.evaluate(el=>({bg:getComputedStyle(el).backgroundColor,fg:getComputedStyle(el).color}));
+    const bg=rgb(pair.bg),fg=rgb(pair.fg),brightness=luminance(bg);
+    if(brightness<0.85)throw new Error(name+' background is not a soft tint');
+    if((brightness+0.05)/(luminance(fg)+0.05)<4.5)throw new Error(name+' text contrast too low');
+    for(const color of [bg,fg])if(Math.min(Math.abs(hue(color)-themeHue),360-Math.abs(hue(color)-themeHue))>20)throw new Error(name+' theme hue lost');
+  }
+  await page.screenshot({path:'output/playwright/department-tag-menu.png'});
+  await menu.getByRole('option',{name:'美术',exact:true}).click();
+  if(await menu.count())throw new Error('Menu did not close after choosing');
+  if(await trigger.innerText()!=='美术')throw new Error('Selected chip missing');
+  await trigger.press('ArrowDown');
+  await trigger.press('Home');
+  await trigger.press('ArrowDown');
+  await trigger.press('Enter');
+  if(await trigger.innerText()!=='策划')throw new Error('Keyboard selection failed');
+  await trigger.click();
+  await trigger.press('Escape');
+  if(await menu.count())throw new Error('Escape failed');
+  await trigger.click();
+  await page.getByRole('heading',{name:'人员与部门',exact:true}).click();
+  if(await menu.count())throw new Error('Outside click failed');
+  await page.getByRole('button',{name:'保存设置',exact:true}).click();
+  await page.getByText('设置已保存 · 仅保存在本机',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'需求总览',exact:true}).click();
+  await page.getByRole('button',{name:'查看标签详情测试',exact:true}).click();
+  await page.getByRole('checkbox',{name:'使用人员默认部门',exact:true}).uncheck();
+  const detailCombo=page.getByRole('combobox',{name:'手动指定部门',exact:true});
+  await detailCombo.click();
+  await detailCombo.press('Escape');
+  if(!await page.getByRole('dialog',{name:'任务详情',exact:true}).isVisible())throw new Error('Escape closed entire detail dialog');
+  await page.setViewportSize({width:1000,height:700});
+  await detailCombo.click();
+  const rect=await page.getByRole('listbox',{name:'手动指定部门选项',exact:true}).boundingBox();
+  if(!rect || rect.x<0 || rect.y<0 || rect.x+rect.width>1000 || rect.y+rect.height>700)throw new Error('Popup outside viewport');
+  await detailCombo.press('Escape');
+  await page.setViewportSize({width:1280,height:900});
+  return 'six soft backgrounds and matching text hues with readable contrast, chip options, keyboard selection, Escape and outside dismissal passed';
+}

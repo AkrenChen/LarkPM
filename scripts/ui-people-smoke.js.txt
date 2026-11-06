@@ -1,0 +1,62 @@
+async page => {
+  const chooseDepartment = async (label, name) => {
+    await page.getByRole('combobox',{name:label,exact:true}).click();
+    await page.getByRole('listbox',{name:label+'选项',exact:true}).getByRole('option',{name,exact:true}).click();
+  };
+  const initial = await page.request.post(new URL('/rpc',page.url()).href,{data:{method:'snapshot',params:{}}});
+  const settings = (await initial.json()).result.settings;
+  await page.request.post(new URL('/rpc',page.url()).href,{data:{method:'settings_save',params:{...settings,people:settings.people.map(p=>['ou_retired','ou_current'].includes(p.id)?{...p,employment_status:'unknown'}:p)}}});
+  await page.reload();
+  if (await page.getByRole('button', {name:'载入流程示例',exact:true}).count()) {
+    await page.getByRole('button', {name:'载入流程示例',exact:true}).click();
+    await page.locator('.task-card').first().waitFor();
+  }
+  const project = await page.getByRole('combobox', {name:'当前项目',exact:true}).inputValue();
+  const title = '本地人员管理回归' + Date.now();
+  const response = await page.request.post(new URL('/rpc',page.url()).href, {data:{method:'create',params:{
+    project,title,owners:[{id:'ou_retired',name:'离职同事'},{id:'ou_current',name:'在职同事'}]}}});
+  if ((await response.json()).error) throw new Error('Could not seed isolated fixture');
+  await page.reload();
+  await page.getByRole('button', {name:'设置',exact:true}).click();
+  await page.getByRole('button', {name:'人员与部门',exact:true}).click();
+  if (await page.getByRole('button',{name:'授权通讯录',exact:true}).count()) throw new Error('Contact authorization still offered');
+  if (await page.getByRole('button',{name:'同步通讯录状态',exact:true}).count()) throw new Error('Contact sync still offered');
+  await page.getByRole('combobox', {name:'按人员状态筛选人员',exact:true}).selectOption('all');
+  await page.getByRole('checkbox',{name:'选择离职同事（ou_retired）',exact:true}).check();
+  await page.getByRole('checkbox',{name:'选择在职同事（ou_current）',exact:true}).check();
+  await page.waitForTimeout(4500);
+  if (!await page.getByRole('checkbox',{name:'选择离职同事（ou_retired）',exact:true}).isChecked()) throw new Error('Polling cleared batch selection');
+  await chooseDepartment('批量部门','开发');
+  await page.getByRole('button',{name:'应用部门',exact:true}).click();
+  await page.getByRole('checkbox',{name:'选择离职同事（ou_retired）',exact:true}).check();
+  await page.getByRole('checkbox',{name:'选择在职同事（ou_current）',exact:true}).check();
+  await page.getByRole('combobox',{name:'批量人员状态',exact:true}).selectOption('active');
+  await page.getByRole('button',{name:'应用状态',exact:true}).click();
+  await page.getByRole('combobox',{name:'离职同事的人员状态（ou_retired）',exact:true}).selectOption('resigned');
+  await page.getByRole('button',{name:'保存设置',exact:true}).click();
+  await page.getByText('设置已保存 · 仅保存在本机',{exact:true}).waitFor();
+  await page.getByRole('combobox', {name:'按人员状态筛选人员',exact:true}).selectOption('visible');
+  await page.getByText('已隐藏 1 名离职／暂不使用人员',{exact:true}).waitFor();
+  if (await page.locator('.person-setting').filter({hasText:'离职同事'}).count()) throw new Error('Departed person visible by default');
+  await page.getByRole('combobox', {name:'按部门筛选人员',exact:true}).selectOption('开发');
+  if (await page.getByRole('combobox',{name:'在职同事的默认部门（ou_current）',exact:true}).count() !== 1) throw new Error('Department filter lost matching person');
+  for (const value of await page.locator('.person-setting .department-select').allTextContents()) if (!value.startsWith('开发')) throw new Error('Department filter not applied');
+  await page.getByRole('combobox',{name:'在职同事的人员状态（ou_current）',exact:true}).selectOption('unused');
+  await page.getByRole('button',{name:'保存设置',exact:true}).click();
+  await page.getByText('设置已保存 · 仅保存在本机',{exact:true}).waitFor();
+  await page.reload();
+  await page.getByRole('button', {name:'设置',exact:true}).click();
+  await page.getByRole('button', {name:'人员与部门',exact:true}).click();
+  await page.getByText('已隐藏 2 名离职／暂不使用人员',{exact:true}).waitFor();
+  await page.getByRole('combobox', {name:'按人员状态筛选人员',exact:true}).selectOption('all');
+  if (await page.getByRole('combobox',{name:'离职同事的人员状态（ou_retired）',exact:true}).inputValue() !== 'resigned') throw new Error('Local status lost');
+  if (await page.getByRole('combobox',{name:'在职同事的默认部门（ou_current）',exact:true}).innerText() !== '开发') throw new Error('Batch department lost');
+  await page.getByRole('button', {name:'需求总览',exact:true}).click();
+  await page.locator('.task-card').filter({hasText:title}).click();
+  if (!(await page.locator('.owner-chips').innerText()).includes('离职同事')) throw new Error('Historical owner removed');
+  await page.getByRole('button', {name:'关闭任务详情',exact:true}).click();
+  await page.getByRole('button', {name:'设置',exact:true}).click();
+  await page.getByRole('button', {name:'人员与部门',exact:true}).click();
+  await page.screenshot({path:'output/playwright/local-people.png'});
+  return {result:'local status, batch status/department, filtering, persistence, historical preservation and disabled contact entries passed'};
+}

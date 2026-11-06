@@ -1,0 +1,110 @@
+import pathlib
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'backend'))
+from service import Service
+
+
+class Remote:
+    def __init__(self):
+        self.rows = [dict(record_id='rec1', title='需求', start='', end='', owners=[], state='todo', module='系统', version='v1')]
+        self.writes = []
+
+    def status(self):
+        return {'configured': True, 'authorized': True}
+
+    def records(self, config):
+        return self.rows
+
+    def update(self, config, record_id, patch):
+        self.writes.append((config['table_id'], record_id, patch))
+        self.rows[0].update(patch)
+
+
+class ServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.remote = Remote()
+        self.s = Service(pathlib.Path(self.temp.name) / 'workspace.db', self.remote)
+        self.p = self.s.call('project_save', dict(name='测试', url='https://example.feishu.cn/base/baseABC?table=tblABC'))
+        self.s.call('sync', {'project': self.p['id']})
+
+    def tearDown(self):
+        self.s.w.close()
+        self.temp.cleanup()
+
+    def test_project_settings_save_preserves_local_columns(self):
+        column = self.s.call('workflow_column_save', dict(project=self.p['id'], name='新系统', priority='high'))
+        self.s.call('project_save', dict(self.p, name='新项目名称'))
+        self.assertEqual(self.s.project(self.p['id'])['workflow_columns'], [column])
+        self.assertEqual(self.remote.writes, [])
+
+    def test_only_selected_fields_written_and_unselected_changes_remain_pending(self):
+        t = self.s.call('snapshot', {'project': self.p['id']})['tasks'][0]
+        t = self.s.call('edit', dict(id=t['id'], patch={'title': '新需求', 'end': '2026-12-01'}, revision=t['revision']))
+        self.assertEqual(self.remote.writes, [])
+        result = self.s.call('write', dict(project=self.p['id'], selections=[dict(id=t['id'], fields=['title'], revision=t['revision'])]))
+        self.assertEqual(result['written'], 1)
+        self.assertEqual(self.remote.writes[0][2], {'title': '新需求'})
+        self.assertEqual(set(self.s.w.get(t['id'])['pending']), {'end'})
+
+    def test_global_settings_route_and_department_override_never_write_remote(self):
+        settings = self.s.call('snapshot', {'project': self.p['id']})['settings']
+        self.s.call('settings_save', dict(revision=settings['revision'], profile={'name': 'Me', 'owner_id': 'ou_1'},
+                                         people=[{'id': 'ou_1', 'name': 'Me', 'department': 'UI'}]))
+        task = self.s.w.snapshot(self.p['id'])['tasks'][0]
+        task = self.s.call('edit', dict(id=task['id'], revision=task['revision'], patch={'department_override': ['Special']}))
+        self.assertEqual(task['pending'], {})
+        self.s.call('sync', {'project': self.p['id']})
+        self.assertEqual(self.s.w.get(task['id'])['departments'], ['Special'])
+        self.assertEqual(self.remote.writes, [])
+        self.assertEqual(self.s.call('snapshot', {})['settings']['profile']['owner_id'], 'ou_1')
+
+    def test_contact_endpoints_closed_and_table_sync_does_not_query_contacts(self):
+        calls = []
+        self.remote.contacts = lambda ids: calls.append(ids)
+        for method in ('contacts_sync', 'contacts_authorize'):
+            with self.subTest(method=method), self.assertRaisesRegex(ValueError, '已关闭'):
+                self.s.call(method, {})
+        self.s.call('sync', {'project': self.p['id']})
+        self.assertEqual(calls, [])
+
+    def test_remote_conflict_blocks_write_and_preserves_both_values(self):
+        t = self.s.w.snapshot()['tasks'][0]
+        t = self.s.w.edit(t['id'], {'title': '本地'}, t['revision'])
+        self.remote.rows[0]['title'] = '远端'
+        with self.assertRaises(ValueError):
+            self.s.call('write', dict(project=self.p['id'], selections=[dict(id=t['id'], fields=['title'], revision=t['revision'])]))
+        self.assertEqual(self.remote.writes, [])
+        self.assertIn('title', self.s.w.get(t['id'])['conflicts'])
+
+    def test_wrong_project_and_local_task_cannot_be_written(self):
+        local = self.s.w.create(dict(title='私人分支', project=self.p['id']))
+        with self.assertRaises(ValueError):
+            self.s.call('write', dict(project=self.p['id'], selections=[dict(id=local['id'], fields=['title'], revision=local['revision'])]))
+        other = self.s.call('project_save', dict(name='另一个', base_token='base2', table_id='tbl2'))
+        t = next(t for t in self.s.w.snapshot()['tasks'] if t['source'])
+        with self.assertRaises(ValueError):
+            self.s.call('write', dict(project=other['id'], selections=[dict(id=t['id'], fields=['title'], revision=t['revision'])]))
+        self.assertFalse(self.remote.writes)
+
+    def test_project_connection_can_be_configured_but_not_rebound_with_tasks(self):
+        self.assertEqual(self.p['base_token'], 'baseABC')
+        self.assertEqual(self.p['table_id'], 'tblABC')
+        with self.assertRaises(ValueError):
+            self.s.call('project_save', dict(self.p, table_id='tblOTHER'))
+
+    def test_parent_work_item_and_children_share_module_without_adding_dependencies(self):
+        self.remote.rows = [dict(record_id='parent', title='活动模块', state='todo', owners=[]),
+                            dict(record_id='child', title='切摆', state='todo', owners=[], parents=['parent'])]
+        self.s.call('sync', {'project': self.p['id']})
+        tasks = {t['source']['record_id']: t for t in self.s.w.snapshot(self.p['id'])['tasks']}
+        self.assertEqual(tasks['parent']['module'], '活动模块')
+        self.assertEqual(tasks['child']['module'], '活动模块')
+        self.assertFalse(tasks['child']['upstream'])
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,0 +1,21 @@
+.modal.version-overview{width:880px;padding:18px;max-width:calc(100vw - 40px);max-height:calc(100dvh - 48px);display:flex;flex-direction:column;overflow:hidden}
+.version-overview>header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px;flex-shrink:0}
+.version-overview>header>div:first-child{display:flex;align-items:center;gap:12px}
+.version-overview>header span{font-size:10px;color:#9199a4}
+.version-overview-scroll{overflow:auto;min-height:0;border:1px solid #e5e8ed;border-radius:5px}
+.version-overview table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px;min-width:700px}
+.version-overview th{position:sticky;top:0;background:#f5f6f8;z-index:1;text-align:left;font-size:11px;color:#7b8593;font-weight:500;padding:9px 8px;border-bottom:1px solid #e3e7ed}
+.version-overview th:first-child{width:145px}.version-overview th:nth-child(2){width:115px}.version-overview th:nth-child(3){width:158px}.version-overview th:last-child{width:34px}
+.version-overview td{padding:5px 6px;border-bottom:1px solid #edf0f3;vertical-align:top}
+.version-overview td+td{border-left:1px solid #f0f2f5}
+.version-overview tbody tr:last-child td{border-bottom:0}
+.version-overview td input,.version-overview td textarea{width:100%;font-size:12px;border:1px solid transparent;background:transparent;border-radius:3px;padding:6px;min-width:0}
+.version-overview td input:hover,.version-overview td textarea:hover{border-color:#e1e5eb}
+.version-overview td input:focus,.version-overview td textarea:focus{border-color:#96a8c0;background:#fff}
+.version-overview td textarea{line-height:1.55;min-height:47px;resize:vertical}
+.version-overview td .list-select{width:100%}
+.version-overview td .list-select-trigger{min-height:30px;font-size:12px;padding:6px;border-color:transparent}
+.version-source-status{font-size:9px;color:#a0a6b0;padding-left:6px;display:block}
+.version-overview>footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;flex-shrink:0}
+.version-overview>footer>span{font-size:10px;color:#929aa4}
+.version-overview-empty{padding:30px;text-align:center;font-size:12px;color:#929aa4}

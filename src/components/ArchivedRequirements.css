@@ -1,0 +1,16 @@
+.modal.archived-requirements{width:620px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 48px);display:flex;flex-direction:column;overflow:hidden}
+.archived-requirements>header{flex-shrink:0}
+.archived-requirements h2>span{font-size:12px;font-weight:400;color:#90988f;margin-left:6px}
+.archived-requirements .archived-search{display:flex;flex-direction:column;gap:7px;font-size:11px;color:#80877e;margin-bottom:12px}
+.archived-list{min-height:0;overflow:auto}
+.archived-requirement{display:flex;align-items:flex-start;gap:12px;border-top:1px solid #eceeea;padding:10px 0}
+.archived-requirement>details{flex:1;min-width:0}
+.archived-requirement summary{padding:7px 0;cursor:pointer;color:#78816f;font-size:12px}
+.archived-requirement summary strong{color:#41493f;font-size:13px;font-weight:500;overflow-wrap:anywhere}
+.archived-requirement summary>span{font-size:10px;color:#87957e;margin-left:10px}
+.archived-task-list{display:flex;flex-direction:column;padding-top:4px}
+.archived-task-list button{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;padding:8px;border:0;border-radius:5px;background:transparent;color:#757d72;font-size:11px;cursor:pointer}
+.archived-task-list button:hover{background:#f3f5f0}
+.archived-task-list button span{overflow-wrap:anywhere;min-width:0}
+.archived-task-list small{flex-shrink:0;color:#a0a69b;font-size:10px}
+.archived-empty{text-align:center;color:#989e94;padding:36px 0;font-size:12px}

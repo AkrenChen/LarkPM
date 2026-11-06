@@ -1,0 +1,46 @@
+import { useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import type { Auth, Project, Run } from '../types';
+import Icon from './Icon';
+import './Connections.css';
+
+const fieldLabels: Record<string, string> = { title: '标题', start: '开始时间', end: '截止时间', owners: '处理人', state: '工作状态', parent: '模块归类（父记录）', version: '版本', description: '需求描述', department: '部门选项' };
+const defaultFields = { title: '需求内容', start: '开始时间', end: '截止时间', owners: '处理人', state: '开发状态', parent: '父记录', version: '版本', description: '需求描述及反馈', department: '部门' };
+const sourceFields = { tests: { project: '项目名', title: '测试项目', start: '进测日期', end: '结测日期', version: '版本号' }, versions: { platform: '平台', version: '版本号', status: '审核状态', released: '过审时间' } };
+function fresh(): Project { return { id: '', name: '', url: '', base_token: '', table_id: '', fields: { ...defaultFields }, targets: {}, done_value: '已完成', todo_value: '未开始', active_value: '进行中', paused_value: '暂停', closed_value: '关闭需求' }; }
+
+export default function Settings({ projects, project, auth, run, busy, onProject }: { projects: Project[]; project?: Project; auth: Auth; run: Run; busy: boolean; onProject: (id: string) => void }) {
+  const [draft, setDraft] = useState<Project>(() => project ? { ...fresh(), ...project, fields: { ...defaultFields, ...project.fields } } : fresh());
+  const [appId, setAppId] = useState(auth.app_id || ''), [secret, setSecret] = useState(''), [redirect, setRedirect] = useState(auth.redirect_uri || 'http://127.0.0.1:18765/callback');
+  const [authUrl, setAuthUrl] = useState('');
+  const [openError, setOpenError] = useState('');
+  const [section, setSection] = useState<'requirements' | 'sources' | 'auth'>('requirements');
+  useEffect(() => { setDraft(project ? { ...fresh(), ...project, fields: { ...defaultFields, ...project.fields } } : fresh()); }, [project?.id]);
+  useEffect(() => { if (auth.app_id) setAppId(auth.app_id); if (auth.redirect_uri) setRedirect(auth.redirect_uri); }, [auth.app_id, auth.redirect_uri]);
+  const connected = !!(auth.authorized || auth.authenticated || auth.connected || auth.has_token);
+  return <div className={`settings-layout connections-layout connection-section-${section}`}>
+    <aside className="connections-project-list" aria-label="项目连接列表">
+      <div className="connections-list-heading"><h2>项目</h2><span>{projects.length}</span></div>
+      <button className="button" disabled={busy} onClick={() => { setDraft(fresh()); setSection('requirements'); }}><Icon name="plus" size={14}/>新建连接</button>
+      <div className="connections-project-items">{projects.map(p => <button key={p.id} disabled={busy} aria-pressed={draft.id === p.id} className={draft.id === p.id ? 'selected' : ''} onClick={() => { onProject(p.id); setDraft({ ...fresh(), ...p, fields: { ...defaultFields, ...p.fields } }); }}><strong>{p.name}</strong><span>{p.table_id ? '飞书需求表' : '本地项目'}</span></button>)}</div>
+    </aside>
+    <div className="connections-detail">
+    <nav className="connections-tabs" aria-label="连接配置分类">{([['requirements', '需求表'], ['sources', '关联表'], ['auth', '飞书授权']] as const).map(([id, label]) => <button key={id} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>{label}</button>)}</nav>
+    <section className="settings-card"><header><div className="settings-card-icon"><Icon name="box"/></div><div><h2>{draft.name || '新建项目连接'}</h2><p>{section === 'sources' ? '关联测试排期和版本记录，按当前项目读取。' : '连接需求表，本地任务与依赖独立保存。'}</p></div></header>
+      <form onSubmit={e => { e.preventDefault(); const values: Record<string, unknown> = { ...draft }; if (!draft.id) delete values.id; void run<Project>('project_save', values, '项目连接已保存').then(p => { if (p) { onProject(p.id); setDraft({ ...fresh(), ...p }); } }); }}>
+        <div className="connection-requirements"><label>项目名称<input required value={draft.name} maxLength={100} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="例如：拼图 Solitaire"/></label>
+        <label>飞书需求表链接<input type="url" value={draft.url || ''} onChange={e => setDraft({ ...draft, url: e.target.value })} placeholder="https://…feishu.cn/base/…?table=tbl…"/><small>可粘贴链接自动解析，也可在下方填写 Base Token 和 Table ID。项目中的个人分支默认在本地保存。</small></label>
+        <div className="form-grid"><label>Base Token<input value={draft.base_token} onChange={e => setDraft({ ...draft, base_token: e.target.value })} placeholder="app… / base token"/></label><label>Table ID<input value={draft.table_id} onChange={e => setDraft({ ...draft, table_id: e.target.value })} placeholder="tbl…"/></label></div>
+        <details className="mapping-details"><summary>字段映射 <span>填写表中字段名或字段 ID</span></summary><div className="form-grid">{Object.entries(fieldLabels).map(([key, label]) => <label key={key}>{label}<input value={draft.fields[key] || ''} onChange={e => setDraft({ ...draft, fields: { ...draft.fields, [key]: e.target.value } })} placeholder={defaultFields[key as keyof typeof defaultFields]}/></label>)}</div></details>
+        <details className="mapping-details"><summary>状态选项映射 <span>需与飞书已有选项一致</span></summary><div className="form-grid">{([['todo_value', '未开始'], ['active_value', '进行中'], ['done_value', '交付就绪对应值'], ['paused_value', '暂停'], ['closed_value', '关闭']] as const).map(([key, label]) => <label key={key}>{label}<input value={draft[key] || ''} onChange={e => setDraft({ ...draft, [key]: e.target.value })}/></label>)}</div></details>
+        </div><div className="connection-sources">{(['tests', 'versions'] as const).map(kind => { const source = draft.sources?.[kind] || { url: '' }; const update = (patch: Record<string, unknown>) => setDraft({ ...draft, sources: { ...draft.sources, [kind]: { ...source, ...patch } } }); return <section key={kind} className="source-settings"><h3>{kind === 'tests' ? '测试排期表（仅甘特展示）' : '版本记录表'}</h3><label>{kind === 'tests' ? '测试表链接' : '版本表链接'}<input type="url" value={source.url} onChange={e => update({ url: e.target.value, base_token: '' })} placeholder="https://…feishu.cn/base/…?table=tbl…"/></label>{kind === 'tests' ? <label>测试表中的项目名<input value={source.project_value || ''} onChange={e => update({ project_value: e.target.value })} placeholder="与项目名选项完全一致"/></label> : <label>代表线上的审核状态<input value={source.online_value ?? '已过审'} onChange={e => update({ online_value: e.target.value })}/></label>}{source.url.includes('/wiki/') && <label>测试表真实 Base Token<input value={source.base_token || ''} onChange={e => update({ base_token: e.target.value })}/><small>Wiki 链接需补充真实 Base Token，不新增知识库授权。</small></label>}<details className="mapping-details"><summary>{kind === 'tests' ? '测试表' : '版本表'}字段映射</summary><div className="form-grid">{Object.entries(sourceFields[kind]).map(([key, value]) => <label key={key}>{value}<input value={source.fields?.[key] ?? value} onChange={e => update({ fields: { ...sourceFields[kind], ...source.fields, [key]: e.target.value } })}/></label>)}</div></details></section>; })}
+        </div><p className="muted connection-save-note">已有任务的项目不能换绑其他表，请新建项目连接。版本目标在甘特视图维护。</p><div className="button-row right"><button className="button primary" disabled={busy || !draft.name.trim()}>{draft.id ? '保存项目连接' : '创建项目连接'}</button></div>
+      </form>
+    </section>
+    <div className="settings-side"><section className="settings-card"><header><div className="settings-card-icon purple"><Icon name="link"/></div><div><h2>飞书账号授权</h2><p>{connected ? '已授权，可以按项目读取需求' : '配置自己的飞书自建应用'}</p></div><span className={`status-pill ${connected ? 'done' : 'todo'}`}><i/>{connected ? '已连接' : '待连接'}</span></header><form onSubmit={e => { e.preventDefault(); void run('auth_configure', { app_id: appId.trim(), app_secret: secret, redirect_uri: redirect }, '应用配置已加密保存').then(result => { if (result) { setSecret(''); setAuthUrl(''); } }); }}><label>App ID<input required value={appId} onChange={e => setAppId(e.target.value)} placeholder="cli_…" autoComplete="off"/></label><label>App Secret<input required type="password" value={secret} onChange={e => setSecret(e.target.value)} placeholder="仅用于本机授权，不进入项目文件" autoComplete="new-password"/></label><label>回调地址<input type="url" required value={redirect} onChange={e => setRedirect(e.target.value)}/><small>在飞书开发者后台配置相同的重定向地址。</small></label><button className="button full-width" disabled={busy || !appId || !secret}>保存应用配置</button></form><div className="auth-actions"><button className="button primary full-width" disabled={busy || !auth.configured} onClick={() => void run<{ url?: string; authorize_url?: string }>('auth_begin').then(r => { if (r) setAuthUrl(r.url || r.authorize_url || ''); })}>生成飞书授权链接</button>{authUrl && <div className="auth-link"><button className="button" onClick={() => void invoke('open_auth_url', { url: authUrl }).catch(error => { setOpenError(String(error)); })}>打开飞书授权页面 ↗</button>{openError && <p role="alert">{openError}</p>}<p>由你打开链接并授权。完成后返回本窗口，连接状态会自动更新。</p></div>}</div></section>
+      <section className="settings-card quiet"><h3>连接后的工作方式</h3><ol><li>点击“读取飞书”，需求进入本地工作台。</li><li>在本地调整任务、依赖和排期。</li><li>进入“同步与回写”，选择字段后提交。</li></ol><p>个人分支默认只在本地。LinkinNotes 仅显示主动关联的待办，私人笔记不进入飞书。</p></section>
+    </div>
+    </div>
+  </div>;
+}
+

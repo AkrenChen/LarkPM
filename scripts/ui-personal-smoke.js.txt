@@ -1,0 +1,38 @@
+async page => {
+  const response = await page.request.post(new URL('/rpc',page.url()).href,{data:{method:'snapshot',params:{}}});
+  const settings = (await response.json()).result.settings;
+  await page.request.post(new URL('/rpc',page.url()).href,{data:{method:'settings_save',params:{...settings,profile:{name:'',owner_id:''}}}});
+  await page.reload();
+  if (await page.getByRole('button', {name:'载入流程示例',exact:true}).count()) await page.getByRole('button', {name:'载入流程示例',exact:true}).click();
+  await page.locator('.task-card').first().waitFor();
+  await page.getByRole('button', {name:'个人工作台',exact:true}).click();
+  await page.getByText('先关联你的人员身份',{exact:true}).waitFor({timeout:3000});
+  if (await page.locator('.task-row').count()) throw new Error('Unlinked profile exposes team tasks');
+  await page.getByRole('button',{name:'设置使用者',exact:true}).click();
+  await page.getByRole('combobox',{name:'关联飞书人员',exact:true}).selectOption('UI');
+  await page.getByRole('button',{name:'保存设置',exact:true}).click();
+  await page.getByText('设置已保存 · 仅保存在本机',{exact:true}).waitFor();
+  await page.getByRole('button', {name:'个人工作台',exact:true}).click();
+  const owner = page.getByRole('combobox',{name:'按处理人筛选',exact:true});
+  if (await owner.inputValue() !== 'UI') throw new Error('Personal default is not self');
+  if (!await page.locator('.task-row').count()) throw new Error('Own tasks missing');
+  for (const names of await page.locator('.task-row .people').allTextContents()) {
+    if (!names.includes('UI')) throw new Error('Another owner leaked into own tasks');
+  }
+  const ownCount = await page.locator('.task-row').count();
+  await owner.selectOption('');
+  if (await page.locator('.task-row').count() <= ownCount) throw new Error('Explicit all filter failed');
+  await page.getByRole('button', {name:'需求总览',exact:true}).click();
+  if (await owner.inputValue() !== '') throw new Error('Personal filter leaked into overview');
+  await page.getByRole('button', {name:'个人工作台',exact:true}).click();
+  if (await owner.inputValue() !== 'UI') throw new Error('Reentry failed to reset to self');
+  await page.getByRole('button', {name:'我的任务',exact:true}).click();
+  if (await owner.inputValue() !== 'UI') throw new Error('My tasks button cleared self filter');
+  await page.getByRole('button', {name:'设置',exact:true}).click();
+  await page.getByRole('combobox',{name:'关联飞书人员',exact:true}).selectOption('开发');
+  await page.getByRole('button',{name:'保存设置',exact:true}).click();
+  await page.getByText('设置已保存 · 仅保存在本机',{exact:true}).waitFor();
+  await page.getByRole('button', {name:'个人工作台',exact:true}).click();
+  if (await owner.inputValue() !== '开发') throw new Error('Profile change ignored');
+  return 'unlinked prompt, own default, explicit filters, reentry, independent overview and identity change passed';
+}

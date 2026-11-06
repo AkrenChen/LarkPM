@@ -1,0 +1,63 @@
+.main-content.settings-main{display:flex;flex-direction:column;padding:0;overflow:hidden;background:#fff}
+.settings-main>.page-heading{flex-shrink:0;min-height:48px;margin:0;padding:12px 22px;border-bottom:1px solid var(--border)}
+.settings-main>.page-heading h1{font-size:18px;font-weight:550;letter-spacing:0}
+.settings-main>.page-heading .eyebrow,.settings-main>.page-heading p{display:none}
+.settings-main>.banner{flex-shrink:0;margin:8px 18px}
+.settings-hub{display:grid;grid-template-columns:164px minmax(0,1fr);min-height:0;flex:1;background:#fff}
+.settings-tabs{display:flex;flex-direction:column;gap:3px;padding:10px 7px;background:#f5f6f7;border-right:1px solid #edf0f3;overflow:auto}
+.settings-tabs>button{display:flex;align-items:center;gap:10px;min-height:36px;flex-shrink:0;text-align:left;padding:8px 12px;border:0;border-radius:6px;color:#384152;font-size:12px;line-height:20px}
+.settings-tabs>button:hover{background:#e9ebee}
+.settings-tabs>button.selected{background:#dce6fc;color:#245ccc}
+.settings-tabs svg{flex-shrink:0}
+.settings-content{min-width:0;overflow:auto;padding:24px 26px 16px;scrollbar-gutter:stable}
+.settings-content>.preference-card,.settings-savebar{max-width:820px}
+.settings-hub .settings-card{background:transparent;border:0;border-radius:0;box-shadow:none;padding:0;margin:0}
+.settings-hub .settings-card>header{gap:10px;margin-bottom:18px;align-items:center}
+.settings-hub .settings-card>header h2{font-size:16px;font-weight:550;color:#263246}
+.settings-hub .settings-card>header p{font-size:11px;line-height:1.6;margin-top:5px;color:#8b94a2}
+.settings-hub .settings-card-icon{display:none}
+.preference-card>header>.badge{margin-left:auto}
+.settings-hub label{font-size:12px;color:#455063}
+.preference-card>label,.settings-hub .settings-card form>label{display:grid;grid-template-columns:108px minmax(0,380px);align-items:center;gap:7px 12px;margin-bottom:14px}
+.settings-hub label small{font-size:11px;line-height:1.6;color:#8b94a2}
+.preference-card>label>small,.settings-hub .settings-card form>label>small{grid-column:2}
+.settings-hub input,.settings-hub select{min-height:30px;padding:5px 8px;border-radius:5px;font-size:12px;line-height:18px;width:100%}
+.settings-hub input[type=checkbox]{width:14px;min-height:14px}
+.settings-hub .form-grid{gap:12px 20px;margin-bottom:14px}
+.settings-hub .form-grid label{display:flex;flex-direction:column;gap:6px;margin-bottom:0}
+.settings-hub .button{font-size:11px;min-height:29px;padding:5px 10px;border-radius:5px}
+.settings-hub .button.full-width{width:auto;align-self:flex-start}
+.settings-hub .muted{font-size:11px;line-height:1.7}
+.preference-card>p.muted{max-width:580px;margin:3px 0 0 120px}
+.settings-savebar{display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;bottom:-16px;background:#fff;margin-top:20px;padding:12px 0;border-top:1px solid var(--border);z-index:2}
+.people-settings-list{margin:16px 0 12px}
+.people-settings-head,.person-setting{display:grid;grid-template-columns:18px minmax(70px,.8fr) minmax(70px,1fr) minmax(100px,1fr) 94px;align-items:center;gap:10px}
+.people-settings-head{min-height:30px;font-size:11px;color:#8b94a2;border-bottom:1px solid var(--border)}
+.person-setting{min-height:42px;padding:5px 0;border-bottom:1px solid #f0f1f4}
+.person-setting:hover{background:#fafbfd}
+.person-setting>div{display:contents}
+.person-setting strong{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person-setting small{font-size:10px;color:#99a1ad;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person-setting label{display:block;margin:0}
+.settings-hub .mapping-details{margin:16px 0 12px;border-top:1px solid var(--border);padding-top:13px}
+.settings-hub .mapping-details summary{font-size:12px;margin-bottom:10px}
+.settings-hub .mapping-details summary span{font-size:10px}
+.settings-hub .settings-layout{display:flex;flex-direction:column;gap:0;max-width:820px}
+.settings-hub .settings-side{display:contents}
+.settings-hub .settings-side>.settings-card{border-top:1px solid var(--border);padding-top:22px;margin-top:24px}
+.settings-hub .settings-projects{gap:6px;margin-bottom:18px}
+.settings-hub .settings-projects>button{padding:7px 10px;border-radius:5px;font-size:11px}
+.settings-hub .auth-actions{margin-top:12px;padding-top:12px;display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.settings-hub .settings-card.quiet h3{font-size:12px}
+.settings-hub .settings-card.quiet ol{font-size:11px;line-height:1.8;margin:8px 0;padding-left:18px}
+.department-preview{font-size:13px;line-height:1.7;margin-top:12px}
+.contact-help{font-size:11px;color:#8b94a2;line-height:1.7;margin:0 0 14px}
+.people-settings-filters{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.people-settings-filters label{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.people-settings-filters select{width:auto;max-width:180px}
+.people-batchbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px;padding:10px 0;border-top:1px solid #edf0f3;font-size:11px;color:#8b94a2}
+.settings-hub .people-batchbar select{width:98px}
+.settings-hub .people-batchbar>input{width:140px}
+.people-settings-head input[type=checkbox],.person-setting input[type=checkbox]{margin:0}
+.settings-content .banner{overflow-wrap:anywhere}
+@media(max-width:1100px){.settings-hub{grid-template-columns:142px minmax(0,1fr)}.settings-content{padding:20px 20px 16px}.people-settings-head,.person-setting{gap:7px;grid-template-columns:18px minmax(56px,.8fr) minmax(56px,.8fr) minmax(86px,1fr) 90px}.settings-hub .form-grid{gap:10px 14px}}

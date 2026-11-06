@@ -1,0 +1,18 @@
+:root{--workspace-top:28px;--workspace-gutter:24px;--section-gap:16px;--heading-line:32px}
+.app-shell>.sidebar{padding:var(--workspace-top) 16px 24px}
+.sidebar .brand{align-items:flex-start;margin:0 8px 32px}
+.sidebar .brand strong{font-size:24px;line-height:var(--heading-line)}
+.sidebar .brand>div>span{line-height:16px;margin-top:4px}
+.sidebar .brand-symbol{margin-top:5px}
+.main-content:not(.settings-main){padding:var(--workspace-top) var(--workspace-gutter) 24px}
+.main-content>.page-heading{margin-bottom:var(--section-gap);gap:16px}
+.main-content>.page-heading h1{font-size:24px;line-height:var(--heading-line);letter-spacing:-.5px;font-weight:650}
+.main-content>.page-heading p{margin-top:4px;line-height:16px}
+.main-content.settings-main>.page-heading{padding:var(--workspace-top) var(--workspace-gutter) 16px;margin:0;min-height:0}
+.main-content.settings-main>.page-heading h1{font-size:24px;line-height:var(--heading-line);font-weight:650}
+.main-content>.project-summary{margin:0 0 var(--section-gap);padding:12px 0}
+.main-content>.status-progress{margin-bottom:var(--section-gap)}
+.main-content>.filterbar{margin-bottom:var(--section-gap)}
+.settings-main .settings-content{padding:24px var(--workspace-gutter) 16px}
+.filterbar>.department-select{width:122px;min-width:110px;flex-shrink:0}
+@media(max-width:1100px){:root{--workspace-top:24px;--workspace-gutter:20px}.app-shell>.sidebar{padding-right:12px;padding-left:12px}.sidebar .brand{margin-left:5px;margin-right:5px}}

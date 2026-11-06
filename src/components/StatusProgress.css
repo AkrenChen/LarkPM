@@ -1,0 +1,5 @@
+.status-progress{margin-bottom:20px}
+.status-progress-legend{display:flex;align-items:center;flex-wrap:wrap;gap:8px 22px;margin-bottom:9px;font-size:12px;color:#626b77}
+.status-progress-legend>span{display:inline-flex;align-items:center;gap:6px}.status-progress-legend i{width:9px;height:9px;border-radius:2px;flex-shrink:0}.status-progress-legend small{margin-left:auto;color:#9198a2;font-size:11px}
+.status-progress-track{height:18px;display:flex;background:#f1f2f4;border-radius:5px;overflow:hidden;gap:2px}
+.status-progress-segment{min-width:0;flex-shrink:1}.progress-paused{background:#9ba1aa}.progress-done{background:#83bf9b}.progress-active{background:#edc66b}.progress-todo{background:#ed7979}
