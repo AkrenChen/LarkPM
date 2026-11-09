@@ -3,6 +3,11 @@ use std::{io::{BufRead, BufReader, Write}, process::{Child, ChildStdin, ChildStd
 use std::os::windows::process::CommandExt;
 use tauri::{Manager, State, menu::{Menu, MenuItem}, tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState}};
 use serde_json::{json, Value};
+use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+
+fn window_state_flags() -> StateFlags {
+    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
+}
 
 struct Bridge { child: Child, input: ChildStdin, output: BufReader<ChildStdout> }
 impl Drop for Bridge { fn drop(&mut self) { let _ = self.child.kill(); let _ = self.child.wait(); } }
@@ -59,6 +64,7 @@ fn show(app: &tauri::AppHandle) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app,_,_|show(app)))
+        .plugin(tauri_plugin_window_state::Builder::default().with_state_flags(window_state_flags()).build())
         .manage(Backend(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![rpc,open_auth_url])
         .setup(|app| {
@@ -76,7 +82,7 @@ fn main() {
                 .on_tray_icon_event(|tray,event|if let TrayIconEvent::Click {button:MouseButton::Left,button_state:MouseButtonState::Up,..}=event { show(tray.app_handle()); }).build(app)?;
             Ok(())
         })
-        .on_window_event(|window,event|if let tauri::WindowEvent::CloseRequested {api,..}=event { api.prevent_close(); let _=window.hide(); })
+        .on_window_event(|window,event|if let tauri::WindowEvent::CloseRequested {api,..}=event { api.prevent_close(); let _=window.app_handle().save_window_state(window_state_flags()); let _=window.hide(); })
         .build(tauri::generate_context!()).expect("无法初始化 LarkPM")
         .run(|app,event|if let tauri::RunEvent::Exit = event { if let Ok(mut backend)=app.state::<Backend>().0.lock() { *backend=None; } });
 }

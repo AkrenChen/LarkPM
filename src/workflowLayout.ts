@@ -3,6 +3,26 @@ import type { Task, WorkflowColumn } from './types';
 export type WorkflowSystem = { module: string; stages: string[][] };
 export const priorityNames: Record<string, string> = { high: '高', medium: '中', low: '低', '': '未设置' };
 
+export function archivedRequirementNames(tasks: Task[], columns: WorkflowColumn[]): Set<string> {
+  const groups = new Map<string, Task[]>();
+  for (const task of tasks) {
+    if (!task.module) continue;
+    const entries = groups.get(task.module) || [];
+    entries.push(task); groups.set(task.module, entries);
+  }
+  return new Set([...groups].filter(([name, entries]) => {
+    const saved = columns.find(column => column.name === name)?.archived_tasks;
+    const accepted = entries.every(task => task.acceptance === '验收通过' && task.source && !task.source.missing);
+    const manuallyArchived = saved?.length === entries.length && entries.every(task => ['done', 'closed'].includes(task.state) && saved.includes(task.id));
+    return accepted || manuallyArchived;
+  }).map(([name]) => name));
+}
+
+export function availableRequirementNames(tasks: Task[], columns: WorkflowColumn[]): string[] {
+  const archived = archivedRequirementNames(tasks, columns);
+  return workflowLayout(tasks, columns).map(system => system.module).filter(name => name && !archived.has(name));
+}
+
 export function workflowLayout(tasks: Task[], columns: WorkflowColumn[]): WorkflowSystem[] {
   const names = Array.from(new Set([...tasks.map(t => t.module || ''), ...columns.map(c => c.name)]));
   const weights: Record<string, number> = { high: 0, medium: 1, low: 2, '': 3 };

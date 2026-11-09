@@ -4,7 +4,9 @@ Windows 桌面应用 1.0，完整窗口＋托盘。以可配置的飞书需求�
 
 ## 运行
 
-下载安装包 `LarkPM_1.0.0_x64-setup.exe`，或完整解压 `LarkPM-1.0.0-windows-x64.zip`，运行 `LarkPM.exe`。便携包须保留同目录 `sidecar/larkpm-backend.exe`，系统需要 Microsoft Edge WebView2 Runtime。关闭窗口会隐藏至托盘；托盘菜单可重新显示或退出。
+下载安装包 `LarkPM_1.0.3_x64-setup.exe`，或完整解压 `LarkPM-1.0.3-windows-x64.zip`，运行 `LarkPM.exe`。便携包须保留同目录 `sidecar/larkpm-backend.exe`，系统需要 Microsoft Edge WebView2 Runtime。关闭窗口会隐藏至托盘；托盘菜单可重新显示或退出。
+
+窗口位置、大小和最大化状态会在关闭至托盘及退出时保存，下次启动恢复；最小化和隐藏状态不恢复。任务详情的所属需求选项隐藏已归档需求，待验收需求仍可选择。任务详情中可“从本地移除”不再需要的任务，仅清理本地显示，保留分支和个人笔记，解除相关前置依赖；重新读取不会自动导入已移除任务。
 
 首次可点击“载入流程示例”，创建独立的虚构项目，验证功能开发、UI、切摆并行，动效与接入串接。示例不连接真实飞书，也不会替换其他项目。
 

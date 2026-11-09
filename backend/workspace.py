@@ -37,9 +37,10 @@ class Workspace:
     def close(self):
         self.db.close()
 
-    def _all(self, project=None):
+    def _all(self, project=None, include_removed=False):
         sql, args = ('SELECT body FROM tasks', ()) if project is None else ('SELECT body FROM tasks WHERE project=?', (project,))
-        return [json.loads(row[0]) for row in self.db.execute(sql, args)]
+        tasks = [json.loads(row[0]) for row in self.db.execute(sql, args)]
+        return tasks if include_removed else [t for t in tasks if not t.get('locally_removed')]
 
     def _raw(self, task_id):
         row = self.db.execute('SELECT body FROM tasks WHERE id=?', (task_id,)).fetchone()
@@ -59,6 +60,21 @@ class Workspace:
     def _check(self, task, revision):
         if task['revision'] != revision:
             raise Conflict(self.get(task['id']))
+
+    def remove_local(self, task_id, revision):
+        with self.db:
+            self.db.execute('BEGIN IMMEDIATE')
+            task = self._raw(task_id)
+            self._check(task, revision)
+            task['locally_removed'] = True
+            self._put(task)
+            for other in self._all(task['project']):
+                if task_id in other['upstream'] or other.get('branch_of') == task_id:
+                    other['upstream'] = [i for i in other['upstream'] if i != task_id]
+                    if other.get('branch_of') == task_id:
+                        other['branch_of'] = None
+                    self._put(other)
+        return {'removed': task_id}
 
     def _validate(self, task):
         if not isinstance(task['title'], str) or not task['title'].strip() or len(task['title']) > 10000:
@@ -81,7 +97,7 @@ class Workspace:
 
     def create(self, values):
         task = dict(id=str(uuid.uuid4()), project='default', title='', start='', end='', owners=[], state='todo', module='', version='',
-                    source=None, linked=False, upstream=[], branch_of=None, prototypes=False, conflicts={}, revision=0, department_override=None, workflow_stage=None, module_local=False, acceptance='')
+                    source=None, linked=False, upstream=[], branch_of=None, prototypes=False, conflicts={}, revision=0, department_override=None, workflow_stage=None, module_local=False, acceptance='', is_requirement=False)
         task.update({k: copy.deepcopy(v) for k, v in values.items() if k in task and k not in ('id', 'revision', 'conflicts')})
         task['upstream'] = []
         self._validate(task)
@@ -103,7 +119,7 @@ class Workspace:
         return task
 
     def snapshot(self, project=None):
-        return {'tasks': [self.get(t['id']) for t in self._all(project)], 'projects': self.projects()}
+        return {'tasks': [self.get(t['id']) for t in self._all(project) if not t.get('is_requirement')], 'projects': self.projects()}
 
     def _guard_start(self, task, state):
         if state == 'active' and task['state'] != 'active':
@@ -191,7 +207,7 @@ class Workspace:
     def linkin_snapshot(self):
         tasks = []
         for raw in self._all():
-            if not raw['linked']:
+            if not raw['linked'] or raw.get('is_requirement'):
                 continue
             task = self.get(raw['id'])
             note = self.db.execute('SELECT text,revision FROM notes WHERE id=?', (raw['id'],)).fetchone()
@@ -313,7 +329,7 @@ class Workspace:
         return {k: {'before': base.get(k), 'after': task[k]} for k in FIELDS if task[k] != base.get(k)}
 
     def merge_remote(self, records, scope, project='default'):
-        existing = {t['source']['record_id']: t for t in self._all(project) if t.get('source') and t['source'].get('scope') == scope}
+        existing = {t['source']['record_id']: t for t in self._all(project, include_removed=True) if t.get('source') and t['source'].get('scope') == scope}
         seen = set()
         for record in records:
             record = copy.deepcopy(record)
@@ -323,6 +339,7 @@ class Workspace:
             if rid not in existing:
                 self.create(dict(**remote, project=project, module=record.get('module', ''), version=record.get('version', ''),
                                  acceptance=record.get('acceptance', ''),
+                                 is_requirement=record.get('is_requirement', False),
                                  source={'record_id': rid, 'scope': scope, 'base': remote, 'missing': False}))
                 continue
             with self.db:
@@ -346,6 +363,7 @@ class Workspace:
                     task['module'] = record.get('module', task['module'])
                 task['version'] = record.get('version', task['version'])
                 task['acceptance'] = record.get('acceptance', '')
+                task['is_requirement'] = record.get('is_requirement', False)
                 task['source']['missing'] = False
                 self._put(task)
         with self.db:
@@ -380,7 +398,7 @@ class Workspace:
             self._put(task)
 
     def candidates(self, project=None):
-        tasks = self._all(project)
+        tasks = [t for t in self._all(project) if not t.get('is_requirement')]
         def stage(t):
             text = t['title'].lower()
             for name, pattern in [('integrate', r'接入'), ('motion', r'动效|动画'), ('cut', r'切摆|切图|摆放'),

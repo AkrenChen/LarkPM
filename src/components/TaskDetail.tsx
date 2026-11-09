@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { errorText, formatValue, parseConflict, rpc } from '../api';
-import { fieldNames, stateNames, isUnavailable, type AppSettings, type Candidate, type State, type SyncField, type Task, type DepartmentOption } from '../types';
+import { fieldNames, stateNames, isUnavailable, type AppSettings, type Candidate, type State, type SyncField, type Task, type DepartmentOption, type Project } from '../types';
+import { availableRequirementNames } from '../workflowLayout';
 import Icon from './Icon';
 import InlineValue from './InlineValue';
 import ListSelect from './ListSelect';
 import './TaskModal.css';
 import { DepartmentTag } from './DepartmentSelect';
 
-type Props = { departmentOptions: DepartmentOption[]; settings: AppSettings; task: Task; tasks: Task[]; candidates: Candidate[]; onClose: () => void; onChanged: () => Promise<void>; onError: (e: string) => void; onSelect: (id: string) => void; busy: boolean };
+type Props = { project?: Project; departmentOptions: DepartmentOption[]; settings: AppSettings; task: Task; tasks: Task[]; candidates: Candidate[]; onClose: () => void; onChanged: () => Promise<void>; onError: (e: string) => void; onSelect: (id: string) => void; busy: boolean };
 
-export default function TaskDetail({ departmentOptions, settings, task, tasks, candidates, onClose, onChanged, onSelect }: Props) {
+export default function TaskDetail({ project, departmentOptions, settings, task, tasks, candidates, onClose, onChanged, onSelect }: Props) {
   const [base, setBase] = useState(task), [draft, setDraft] = useState({ ...task, department_override: null } as Task), [upstream, setUpstream] = useState(task.upstream);
   const [working, setWorking] = useState(false), [error, setError] = useState(''), [feedback, setFeedback] = useState('');
   const [conflict, setConflict] = useState<Task | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const [branchTitle, setBranchTitle] = useState(''), [depSearch, setDepSearch] = useState('');
   const heading = useRef<HTMLDivElement>(null), panel = useRef<HTMLElement>(null);
   useEffect(() => { heading.current?.focus(); }, []);
@@ -29,6 +31,7 @@ export default function TaskDetail({ departmentOptions, settings, task, tasks, c
     return () => window.removeEventListener('keydown', key);
   }, [onClose, working]);
   const stale = task.revision !== base.revision;
+  const modules = availableRequirementNames(tasks, project?.workflow_columns || []);
   const people = Array.from(new Map([...tasks.flatMap(t => t.owners), ...settings.people].map(p => [p.id, p])).values());
   const directory = new Map(settings.people.map(p => [p.id, p]));
   const defaultDepartments = Array.from(new Set(draft.owners.map(p => directory.get(p.id)?.department).filter((d): d is string => !!d)));
@@ -68,6 +71,19 @@ export default function TaskDetail({ departmentOptions, settings, task, tasks, c
     if (!Object.keys(patch).length) return;
     await action('edit', { id: base.id, revision: base.revision, patch }, '任务已保存于本地');
   }
+  async function removeLocal() {
+    if (working) return;
+    setWorking(true); setError('');
+    try {
+      await rpc('remove_local', { id: base.id, revision: base.revision });
+      onClose();
+      await onChanged();
+    } catch (e) {
+      const concurrent = parseConflict(e);
+      if (concurrent) { setConflict(concurrent.current); setError(concurrent.message); }
+      else setError(errorText(e));
+    } finally { setWorking(false); }
+  }
   function useLatest(keepInput: boolean) {
     const latest = conflict || task;
     if (keepInput) {
@@ -87,12 +103,12 @@ export default function TaskDetail({ departmentOptions, settings, task, tasks, c
       <div className="detail-scroll">
         {error && <div className="banner error" role="alert">{error}</div>}
         {(stale || conflict) && <section className="revision-conflict"><h3>另一端有新修改</h3><p>当前输入已保留。请比较内容后决定，系统不会自动覆盖。</p>{conflict && <div className="compare-grid"><div><small>当前输入</small><p>{draft.title}</p><span>{stateNames[draft.state]} · {draft.start || '未定'} → {draft.end || '未定'}</span></div><div><small>最新版本</small><p>{conflict.title}</p><span>{stateNames[conflict.state]} · {conflict.start || '未定'} → {conflict.end || '未定'}</span></div></div>}<div className="button-row"><button className="button small" onClick={() => useLatest(false)}>载入最新内容</button><button className="button small" onClick={() => useLatest(true)}>保留输入，比较后重存</button></div></section>}
-        {task.source?.missing && <div className="banner warning">飞书记录已不可见或已删除，本地任务保留，不能直接写回。</div>}
+        {task.source?.missing && <div className="banner warning">飞书记录已不可见或已删除，不能直接写回。可从本地移除。</div>}
         <form onSubmit={e => { e.preventDefault(); void save(); }} className="task-form task-inline-form">
           <div className="task-inline-title" ref={heading} tabIndex={-1}><InlineValue revision={base.revision} label="任务标题" value={draft.title}><textarea aria-label="任务标题" rows={2} required maxLength={10000} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })}/></InlineValue></div>
           <div className="task-inline-grid">
             <div className="inline-field"><span className="inline-field-label">状态</span><InlineValue revision={base.revision} label="工作状态" value={<span className={`status-pill ${draft.state}`}><i/>{stateNames[draft.state]}</span>}><ListSelect aria-label="工作状态" value={draft.state} onChange={e => setDraft({ ...draft, state: e.target.value as State })}>{Object.entries(stateNames).map(([k, v]) => <option key={k} value={k} disabled={k === 'active' && task.state !== 'active' && task.blocked_by.length > 0}>{v}</option>)}</ListSelect></InlineValue></div>
-            <div className="inline-field"><span className="inline-field-label">所属需求</span><InlineValue revision={base.revision} label="所属模块" value={draft.module || '未归类'}><input aria-label="所属模块" value={draft.module} onChange={e => setDraft({ ...draft, module: e.target.value })}/></InlineValue></div>
+            <div className="inline-field"><span className="inline-field-label">所属需求</span><ListSelect aria-label="所属模块" value={draft.module} renderValue={() => draft.module || '未归类'} onChange={e => setDraft({ ...draft, module: e.target.value })}><option value="">未归类</option>{modules.map(module => <option key={module} value={module}>{module}</option>)}</ListSelect></div>
             <div className="inline-field"><span className="inline-field-label">开始</span><InlineValue revision={base.revision} label="开始时间" value={draft.start || '未排期'}><input aria-label="开始时间" type="date" value={draft.start} onChange={e => setDraft({ ...draft, start: e.target.value })}/></InlineValue></div>
             <div className="inline-field"><span className="inline-field-label">截止</span><InlineValue revision={base.revision} label="截止时间" value={draft.end || '未排期'}><input aria-label="截止时间" type="date" value={draft.end} min={draft.start || undefined} onChange={e => setDraft({ ...draft, end: e.target.value })}/></InlineValue></div>
             <div className="inline-field"><span className="inline-field-label">版本</span><InlineValue revision={base.revision} label="版本" value={draft.version || '未设置'}><input aria-label="版本" list="detail-versions" value={draft.version} onChange={e => setDraft({ ...draft, version: e.target.value })}/></InlineValue><datalist id="detail-versions">{Array.from(new Set(tasks.map(t => t.version).filter(Boolean))).map(v => <option key={v}>{v}</option>)}</datalist></div>
@@ -107,7 +123,8 @@ export default function TaskDetail({ departmentOptions, settings, task, tasks, c
             </ListSelect></div>
             <div className="inline-field"><span className="inline-field-label">部门</span><div className="task-auto-departments" role="status" aria-label="处理人部门">{defaultDepartments.length ? defaultDepartments.map(name => <DepartmentTag key={name} name={name} options={departmentOptions}/>) : <span className="muted">未配置</span>}</div></div>
           </div>
-          <div className="button-row right">{feedback && <span className="task-save-feedback" role="status">{feedback}</span>}<button className="button primary" disabled={working || !changed || !draft.title.trim()}>{working ? '处理中…' : '保存修改'}</button></div>
+          <div className="task-detail-actions"><button type="button" className="button task-remove-button" disabled={working} onClick={() => setConfirmRemove(value => !value)}>从本地移除</button><div className="button-row right">{feedback && <span className="task-save-feedback" role="status">{feedback}</span>}<button className="button primary" disabled={working || !changed || !draft.title.trim()}>{working ? '处理中…' : '保存修改'}</button></div></div>
+          {confirmRemove && <div className="task-remove-confirm" role="group" aria-label="确认从本地移除"><p>从本地工作台移除“{base.title}”？不会删除飞书记录、分支任务或个人笔记；相关前置依赖将解除，重新读取也不会自动加回。</p><div className="button-row right"><button type="button" className="button small" disabled={working} onClick={() => setConfirmRemove(false)}>取消</button><button type="button" className="button small task-remove-button" disabled={working || stale} onClick={() => void removeLocal()}>确认移除</button></div></div>}
         </form>
         <details open className="detail-section compact-section"><summary>前置依赖 · {upstream.length} 项</summary><p className="section-description">前置任务交付后提示可开始；不会自动将本任务改为进行中。</p>{remainingUpstream.map(t => <button key={t.id} className="upstream-row" onClick={() => onSelect(t.id)}><span className="mini-dot amber"/><span>{t.title}</span><small>{t.owners.map(o => o.name || o.id).join('、') || '未分配'}</small><Icon name="chevron" size={12}/></button>)}{completeUpstream.length > 0 && <details className="completed-upstream"><summary>已交付上游 · {completeUpstream.length} 项</summary>{completeUpstream.map(t => <button key={t.id} className="upstream-row done" onClick={() => onSelect(t.id)}><Icon name="check" size={13}/><span>{t.title}</span><Icon name="chevron" size={12}/></button>)}</details>}
           <div className="dependency-editor dependency-editor-flat"><input aria-label="搜索前置任务" placeholder="搜索同项目任务…" value={depSearch} onChange={e => setDepSearch(e.target.value)}/><div className="dependency-options">{tasks.filter(t => t.id !== task.id && (!depSearch || t.title.toLowerCase().includes(depSearch.toLowerCase()))).map(t => <label key={t.id} className="checkbox-label"><input type="checkbox" checked={upstream.includes(t.id)} onChange={e => setUpstream(e.target.checked ? [...upstream, t.id] : upstream.filter(id => id !== t.id))}/><span>{t.title}<small>{t.module || '未归类'} · {stateNames[t.state]}</small></span></label>)}</div><button className="button small" disabled={working || !depChanged} onClick={() => void action('dependencies', { id: base.id, upstream, revision: base.revision }, '依赖已保存，循环关系会被拒绝')}>保存前置依赖</button></div>

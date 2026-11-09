@@ -13,7 +13,7 @@ def archive_column(workspace, project_id, name):
         row = workspace.db.execute('SELECT body FROM projects WHERE id=?', (project_id,)).fetchone()
         if not row:
             raise ValueError('项目不存在')
-        tasks = [t for t in workspace._all(project_id) if module_name(t) == name]
+        tasks = [t for t in workspace._all(project_id) if module_name(t) == name and not t.get('is_requirement')]
         if not tasks or any(t['state'] not in ('done', 'closed') for t in tasks):
             raise ValueError('所有任务完成后才可归档，请刷新后重试')
         project = json.loads(row[0])
@@ -35,7 +35,7 @@ def arrange(workspace, project_id, systems, revisions):
         raise ValueError('需求列不能重复')
     with workspace.db:
         workspace.db.execute('BEGIN IMMEDIATE')
-        tasks = {t['id']: workspace._raw(t['id']) for t in workspace._all(project_id)}
+        tasks = {t['id']: workspace._raw(t['id']) for t in workspace._all(project_id) if not t.get('is_requirement')}
         assignments = {}
         for system in systems:
             stages = system.get('stages')

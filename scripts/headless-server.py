@@ -61,7 +61,7 @@ def main():
             def do_POST(self):
                 try:
                     request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-                    if request['method'] not in ('snapshot', 'demo', 'create', 'edit', 'link', 'link_many', 'branch', 'dependencies', 'project_save', 'resolve', 'settings_save', 'departments_sync', 'project_sources_sync', 'workflow_arrange', 'workflow_column_save'):
+                    if request['method'] not in ('snapshot', 'demo', 'create', 'edit', 'remove_local', 'link', 'link_many', 'branch', 'dependencies', 'project_save', 'resolve', 'settings_save', 'departments_sync', 'project_sources_sync', 'workflow_arrange', 'workflow_column_save', 'workflow_column_archive'):
                         raise ValueError('Headless verification does not perform external operations')
                     result = {'result': service.call(request['method'], request.get('params') or {})}
                 except Conflict as error:

@@ -95,6 +95,7 @@ class Service:
         by_id = {r['record_id']: r for r in records}
         containers = {parent for r in records for parent in (r.get('parents') or ([r['parent_id']] if r.get('parent_id') else []))}
         for r in records:
+            r['is_requirement'] = r['record_id'] in containers and not r.get('owners')
             parents = r.get('parents') or ([r['parent_id']] if r.get('parent_id') else [])
             if not parents and r['record_id'] in containers:
                 r['module'] = r['title']
@@ -184,6 +185,8 @@ class Service:
             return self.w.create(p)
         if method == 'edit':
             return self.w.edit(p['id'], p['patch'], p['revision'])
+        if method == 'remove_local':
+            return self.w.remove_local(p['id'], p['revision'])
         if method == 'workflow_arrange':
             from workflow import arrange
             self.project(p['project'])

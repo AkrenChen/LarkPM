@@ -4,7 +4,7 @@ import { departmentAccent, departmentStyle } from '../departmentColors';
 import { People, Status } from '../App';
 import { DepartmentTag } from './DepartmentSelect';
 import { ColumnEditor, StatusMenu } from './WorkflowMenus';
-import { moveWorkflow, priorityNames, workflowLayout } from '../workflowLayout';
+import { archivedRequirementNames, moveWorkflow, priorityNames, workflowLayout } from '../workflowLayout';
 import Icon from './Icon';
 import ArchivedRequirements from './ArchivedRequirements';
 import './WorkflowBoard.css';
@@ -39,17 +39,8 @@ export default function WorkflowBoard({ tasks, allTasks, departmentOptions, onSe
     return ids.length > 0 && ids.every(id => ['done', 'closed'].includes(byId.get(id)!.state));
   });
   const completedNames = new Set(completed.map(system => system.module));
-  const archived = systems.filter(system => {
-    if (!system.module) return false;
-    const saved = columns.find(c => c.name === system.module)?.archived_tasks;
-    const ids = system.stages.flat();
-    const accepted = ids.length > 0 && ids.every(id => {
-      const task = byId.get(id)!;
-      return task.acceptance === '验收通过' && task.source && !task.source.missing;
-    });
-    return accepted || (completedNames.has(system.module) && saved?.length === ids.length && ids.every(id => saved.includes(id)));
-  });
-  const archivedNames = new Set(archived.map(system => system.module));
+  const archivedNames = archivedRequirementNames(allTasks, columns);
+  const archived = systems.filter(system => archivedNames.has(system.module));
   const boardSystems = systems.filter(system => !archivedNames.has(system.module) && (completedNames.has(system.module) || system.stages.flat().some(id => visible.has(id)) || !system.stages.length)).sort((a, b) => Number(!b.module) - Number(!a.module) || Number(completedNames.has(b.module)) - Number(completedNames.has(a.module)));
   const closeArchive = useCallback(() => setShowArchive(false), []);
   const closeStatus = useCallback(() => setStatus(null), []), closeEditor = useCallback(() => setEditor(null), []);

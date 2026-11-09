@@ -96,14 +96,36 @@ class ServiceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.s.call('project_save', dict(self.p, table_id='tblOTHER'))
 
-    def test_parent_work_item_and_children_share_module_without_adding_dependencies(self):
+    def test_unassigned_parent_is_requirement_and_children_are_tasks(self):
         self.remote.rows = [dict(record_id='parent', title='活动模块', state='todo', owners=[]),
                             dict(record_id='child', title='切摆', state='todo', owners=[], parents=['parent'])]
         self.s.call('sync', {'project': self.p['id']})
         tasks = {t['source']['record_id']: t for t in self.s.w.snapshot(self.p['id'])['tasks']}
-        self.assertEqual(tasks['parent']['module'], '活动模块')
+        self.assertNotIn('parent', tasks)
         self.assertEqual(tasks['child']['module'], '活动模块')
         self.assertFalse(tasks['child']['upstream'])
+        child = tasks['child']
+        self.s.call('workflow_arrange', dict(project=self.p['id'], systems=[dict(module='活动模块', stages=[[child['id']]])],
+                                            revisions={child['id']: child['revision']}))
+        raw_parent = next(t for t in self.s.w._all(self.p['id']) if t['source']['record_id'] == 'parent')
+        self.assertTrue(raw_parent['is_requirement'])
+        self.assertEqual(self.remote.writes, [])
+
+    def test_parent_classification_updates_existing_tasks_and_preserves_standalone_unassigned(self):
+        self.remote.rows = [dict(record_id='parent', title='系统', owners=[dict(id='owner')], state='todo'),
+                            dict(record_id='child', title='子任务', owners=[], state='todo', parents=['parent']),
+                            dict(record_id='standalone', title='待分配', owners=[], state='todo')]
+        self.s.sync(self.p['id'])
+        def visible():
+            return {t['source']['record_id']: t for t in self.s.w.snapshot(self.p['id'])['tasks'] if not t['source']['missing']}
+        parent_id = visible()['parent']['id']
+        self.remote.rows[0]['owners'] = []
+        self.s.sync(self.p['id'])
+        self.assertNotIn('parent', visible())
+        self.assertIn('standalone', visible())
+        self.remote.rows[0]['owners'] = [dict(id='owner')]
+        self.s.sync(self.p['id'])
+        self.assertEqual(visible()['parent']['id'], parent_id)
 
 
 if __name__ == '__main__':

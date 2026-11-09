@@ -19,6 +19,36 @@ class WorkspaceTests(unittest.TestCase):
     def task(self, title='任务', **kw):
         return self.w.create(dict(title=title, **kw))
 
+    def test_remove_local_detaches_dependents_preserves_branches_and_notes(self):
+        parent = self.task('旧任务')
+        child = self.w.branch(parent['id'], {'title': '分支'})
+        with self.w.db:
+            self.w.db.execute('INSERT INTO notes VALUES (?,?,?)', (parent['id'], 'private note', 1))
+        with self.assertRaises(Conflict):
+            self.w.remove_local(parent['id'], parent['revision'] - 1)
+        self.assertEqual(len(self.w.snapshot()['tasks']), 2)
+        self.w.remove_local(parent['id'], parent['revision'])
+        self.assertEqual([t['id'] for t in self.w.snapshot()['tasks']], [child['id']])
+        current = self.w.get(child['id'])
+        self.assertEqual(current['upstream'], [])
+        self.assertIsNone(current['branch_of'])
+        self.assertEqual(current['readiness'], 'ready')
+        self.assertEqual(self.w.db.execute('SELECT text FROM notes WHERE id=?', (parent['id'],)).fetchone()[0], 'private note')
+        self.assertTrue(self.w._raw(parent['id'])['locally_removed'])
+
+    def test_removed_remote_task_is_not_reimported_and_survives_reopen(self):
+        row = dict(record_id='rec-remove', title='旧记录', state='todo')
+        self.w.merge_remote([row], 'scope')
+        task = self.w.snapshot()['tasks'][0]
+        self.w.remove_local(task['id'], task['revision'])
+        self.w.merge_remote([], 'scope')
+        self.w.merge_remote([dict(row, title='再次可见')], 'scope')
+        self.assertEqual(self.w.snapshot()['tasks'], [])
+        self.assertEqual(len(self.w._all(include_removed=True)), 1)
+        self.w.close()
+        self.w = Workspace(pathlib.Path(self.temp.name) / 'workspace.db')
+        self.assertEqual(self.w.snapshot()['tasks'], [])
+
     def test_acceptance_refresh_does_not_write_back_or_complete_local_tasks(self):
         row = dict(record_id='rec1', title='任务', state='active', acceptance='验收通过')
         self.w.merge_remote([row], 'scope')
