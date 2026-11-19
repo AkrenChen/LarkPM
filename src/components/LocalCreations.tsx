@@ -1,0 +1,16 @@
+import type { Creation } from '../types';
+import { stateNames } from '../types';
+import ListSelect from './ListSelect';
+
+export const creationKey = (item: Creation) => `${item.kind}:${item.id}`;
+
+export default function LocalCreations({ items, selected, setSelected, parentChoices, onParentChange, busy, onSelect, onIgnore }: {
+  items: Creation[]; selected: string[]; setSelected: (value: string[]) => void; parentChoices: Record<string, string>; onParentChange: (module: string, value: string) => void; busy: boolean; onSelect: (id: string) => void; onIgnore: (item: Creation) => void;
+}) {
+  const checked = items.length > 0 && items.every(item => selected.includes(creationKey(item)));
+  return <section className="pending-list local-creations"><header><h2>本地新增</h2><span>{items.length} 项 · 父需求单独勾选；只提交任务仍保留本地归属</span></header><div className="pending-table-scroll"><table className="pending-fields"><thead><tr><th><input type="checkbox" aria-label="全选本地新增" disabled={busy} checked={checked} ref={el => { if (el) el.indeterminate = !checked && items.some(item => selected.includes(creationKey(item))); }} onChange={event => setSelected(event.target.checked ? items.map(creationKey) : [])}/></th><th>名称</th><th>操作</th><th>本地所属需求</th><th>提交内容</th><th aria-label="忽略操作"/></tr></thead><tbody>{items.map(item => {
+    const key = creationKey(item), value = item.values;
+    const summary = item.kind === 'requirement' ? '无处理人的父需求' : [value.owners.map(owner => owner.name || owner.id).join('、'), value.version, value.start && value.end ? `${value.start}～${value.end}` : value.end || value.start, stateNames[value.state]].filter(Boolean).join(' · ');
+    return <tr key={key}><td><input type="checkbox" aria-label={`创建${item.kind === 'requirement' ? '需求' : '任务'}：${item.title}`} disabled={busy} checked={selected.includes(key)} onChange={event => setSelected(event.target.checked ? [...selected, key] : selected.filter(value => value !== key))}/></td><th scope="row">{item.kind === 'task' ? <button className="task-title-link" title={item.title} onClick={() => onSelect(item.id)}><span>{item.title}</span></button> : <span title={item.title}>{item.title}</span>}</th><td>{item.retry ? '重试创建' : item.kind === 'requirement' ? '创建父需求' : '创建任务'}{item.retry && <span className="pending-unavailable" title="沿用上次提交内容和标识；之后的本地修改在创建成功后继续回写"> · 沿用上次内容</span>}</td><td title={item.module}>{!item.retry && (item.parents?.length || 0) > 1 ? <ListSelect aria-label={`选择飞书父需求：${item.title}`} value={parentChoices[item.module] ?? '__choose__'} disabled={busy} onChange={event => onParentChange(item.module, event.target.value)}><option value="__choose__" disabled>同名父需求 · 请选择</option><option value="">仅本地归类，不关联飞书父需求</option>{item.parents!.map((parent, index) => <option key={parent.id} value={parent.id}>{[parent.title, parent.version || '未设置版本', parent.owners.map(owner => owner.name || owner.id).join('、') || '未分配', parent.end || parent.start, `同名${index + 1}`].filter(Boolean).join(' · ')}</option>)}</ListSelect> : item.module || '未归类'}</td><td title={summary}>{summary}</td><td><button className="text-button" disabled={busy} onClick={() => onIgnore(item)}>忽略</button></td></tr>;
+  })}</tbody></table></div></section>;
+}

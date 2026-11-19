@@ -2,7 +2,7 @@
 .list-select>span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .list-select>svg{flex-shrink:0;transform:rotate(90deg);color:#929ba8}
 .list-select.is-open>svg{transform:rotate(-90deg)}
-.list-select.is-open{border-color:#858d98;box-shadow:0 0 0 2px #858d9818}
+.list-select.is-open{box-shadow:none}
 .list-select:disabled{cursor:default;opacity:.5}
 .select-list{position:fixed;z-index:1200;overflow:auto;overscroll-behavior:contain;padding:5px;background:#fff;border:1px solid #e8e8e8;border-radius:6px;box-shadow:0 5px 12px #00000014}
 .select-list>button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:34px;padding:7px 10px;border:0;border-radius:3px;background:transparent;text-align:left;color:#41464e;font-size:11px;line-height:20px;cursor:pointer}

@@ -19,6 +19,22 @@ class WorkflowTests(unittest.TestCase):
         self.w.close()
         self.temp.cleanup()
 
+    def test_unclassified_auto_stages_do_not_link_other_versions(self):
+        old = self.w.create(dict(project='p', title='Old', version='v1'))
+        first = self.w.create(dict(project='p', title='First', version='v2'))
+        last = self.w.create(dict(project='p', title='Last', version='v2'))
+        arrange(self.w, 'p', [dict(module='', stages=[[old['id']], [first['id']], [last['id']]])], {t['id']: t['revision'] for t in (old, first, last)})
+        self.assertEqual(self.w.get(first['id'])['upstream'], [])
+        self.assertEqual(self.w.get(last['id'])['upstream'], [first['id']])
+
+    def test_version_scoped_arrangement_keeps_hidden_tasks_and_explicit_external_edges(self):
+        old = self.w.create(dict(project='p', title='Old', version='v1'))
+        first = self.w.create(dict(project='p', title='First', version='v2'))
+        last = self.w.create(dict(project='p', title='Last', version='v2'), upstream=[old['id']])
+        arrange(self.w, 'p', [dict(module='', stages=[[first['id']], [last['id']]])], {t['id']: t['revision'] for t in (first, last)}, version='v2')
+        self.assertEqual(self.w.get(old['id'])['revision'], old['revision'])
+        self.assertEqual(self.w.get(last['id'])['upstream'], [old['id'], first['id']])
+
     def save(self, stages, systems=None, revisions=None):
         return arrange(self.w, 'p', systems or [dict(module='S', stages=stages)], revisions or {t['id']: t['revision'] for t in self.w.snapshot('p')['tasks']})
 
@@ -107,6 +123,22 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '所有任务完成'):
             archive_column(self.w, 'p', '更名')
 
+    def test_empty_requirement_can_archive_but_unknown_requirement_cannot(self):
+        self.w.save_project(dict(id='p', name='项目'))
+        column = save_column(self.w, 'p', '空需求')
+        archived = archive_column(self.w, 'p', '空需求')
+        self.assertEqual(archived['id'], column['id'])
+        self.assertEqual(archived['archived_tasks'], [])
+        self.w.close()
+        self.w = Workspace(self.path)
+        self.assertEqual(self.w.projects()[0]['workflow_columns'][0]['archived_tasks'], [])
+        with self.assertRaisesRegex(ValueError, '需求不存在'):
+            archive_column(self.w, 'p', '不存在')
+        task = self.w.create(dict(project='p', module='空需求', title='新任务'))
+        with self.assertRaisesRegex(ValueError, '所有任务完成'):
+            archive_column(self.w, 'p', '空需求')
+        self.assertEqual(self.w.get(task['id'])['state'], 'todo')
+
     def test_linkin_and_conflict_cannot_bypass_start_guard(self):
         a, b, c, d = [t['id'] for t in self.tasks]
         self.save([[a], [b, c], [d]])
@@ -121,6 +153,45 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '上游'):
             self.w.resolve(b, 'state', 'remote', self.w.get(b)['revision'])
         self.assertIn('state', self.w.get(b)['conflicts'])
+
+    def test_private_branch_does_not_gate_common_downstream(self):
+        a, b, c, d = [t['id'] for t in self.tasks]
+        branch = self.w.branch(b, {'title': '开发单独下游'})
+        later = self.w.create(dict(project='p', module='S', title='下下游'))
+        system = dict(module='S', stages=[[a, b, c], [d], [later['id']]], branches={b: [branch['id']]})
+        self.save([], systems=[system])
+        self.assertEqual(self.w.get(branch['id'])['upstream'], [b])
+        self.assertEqual(self.w.get(branch['id'])['workflow_parent'], b)
+        self.assertEqual(self.w.get(d)['upstream'], [a, b, c])
+        self.assertEqual(self.w.get(later['id'])['upstream'], [d])
+        self.w.edit(b, {'state': 'done'}, self.w.get(b)['revision'])
+        self.assertEqual(self.w.get(branch['id'])['readiness'], 'ready')
+        with self.assertRaisesRegex(ValueError, '上游'):
+            self.w.edit(d, {'state': 'active'}, self.w.get(d)['revision'])
+        for task_id in (a, c):
+            self.w.edit(task_id, {'state': 'done'}, self.w.get(task_id)['revision'])
+        self.w.edit(d, {'state': 'active'}, self.w.get(d)['revision'])
+        self.assertEqual(self.w.get(branch['id'])['state'], 'todo')
+        self.w.close()
+        self.w = Workspace(self.path)
+        self.assertEqual(self.w.get(branch['id'])['workflow_parent'], b)
+        self.assertEqual(self.w.get(d)['state'], 'active')
+
+    def test_nested_branch_invalid_layout_and_stale_write_are_atomic(self):
+        a, b, c, d = [t['id'] for t in self.tasks]
+        branches = {b: [c], c: [d]}
+        system = dict(module='S', stages=[[a, b]], branches=branches)
+        self.save([], systems=[system])
+        self.assertEqual(self.w.get(d)['upstream'], [c])
+        before = self.w.snapshot('p')
+        for invalid in ({b: [c], c: [b, d]}, {'missing': [c, d]}, {b: [c, c, d]}, {b: 'bad'}):
+            with self.assertRaises(ValueError):
+                self.save([], systems=[dict(module='S', stages=[[a, b]], branches=invalid)])
+            self.assertEqual(self.w.snapshot('p'), before)
+        stale = {t['id']: t['revision'] for t in before['tasks']}
+        self.w.edit(c, {'title': '分支被另一端改过'}, self.w.get(c)['revision'])
+        with self.assertRaises(Conflict):
+            self.save([], systems=[system], revisions=stale)
 
 
 if __name__ == '__main__': unittest.main()

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Task } from '../types';
-import type { WorkflowSystem } from '../workflowLayout';
+import { workflowIds, type WorkflowSystem } from '../workflowLayout';
 import Icon from './Icon';
 import './ArchivedRequirements.css';
 
@@ -30,7 +30,7 @@ export default function ArchivedRequirements({ systems, tasks, onClose, onCreate
       <label className="archived-search">搜索已结需求<input value={search} onChange={event => setSearch(event.target.value)} placeholder="按需求名称搜索…"/></label>
       <div className="archived-list">{filtered.map(system => <div className="archived-requirement" key={system.module}>
         <details><summary><strong>{system.module || '未归类'}</strong><span>已结</span></summary>
-          <div className="archived-task-list">{system.stages.flat().map(id => {
+          <div className="archived-task-list">{workflowIds(system).map(id => {
             const task = byId.get(id)!;
             return <button key={id} aria-label={`查看历史任务${task.title}`} onClick={() => onSelect(id)}><span>{task.title}</span><small>{task.state === 'closed' ? '已关闭' : '已完成'}</small></button>;
           })}</div>

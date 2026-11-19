@@ -4,8 +4,8 @@ import type { Auth, Project, Run } from '../types';
 import Icon from './Icon';
 import './Connections.css';
 
-const fieldLabels: Record<string, string> = { title: '标题', start: '开始时间', end: '截止时间', owners: '处理人', state: '工作状态', parent: '模块归类（父记录）', version: '版本', description: '需求描述', department: '部门选项' };
-const defaultFields = { title: '需求内容', start: '开始时间', end: '截止时间', owners: '处理人', state: '开发状态', parent: '父记录', version: '版本', description: '需求描述及反馈', department: '部门' };
+const fieldLabels: Record<string, string> = { title: '标题', start: '开始时间', end: '截止时间', owners: '处理人', state: '工作状态', parent: '模块归类（父记录）', version: '版本', description: '需求描述', department: '部门选项', acceptance: '验收状态', priority: '优先级' };
+const defaultFields = { title: '需求内容', start: '开始时间', end: '截止时间', owners: '处理人', state: '开发状态', parent: '父记录', version: '版本', description: '需求描述及反馈', department: '部门', acceptance: '验收状态', priority: '优先级' };
 const sourceFields = { tests: { project: '项目名', title: '测试项目', start: '进测日期', end: '结测日期', version: '版本号' }, versions: { platform: '平台', version: '版本号', status: '审核状态', released: '过审时间' } };
 function fresh(): Project { return { id: '', name: '', url: '', base_token: '', table_id: '', fields: { ...defaultFields }, targets: {}, done_value: '已完成', todo_value: '未开始', active_value: '进行中', paused_value: '暂停', closed_value: '关闭需求' }; }
 
@@ -14,6 +14,7 @@ export default function Settings({ projects, project, auth, run, busy, onProject
   const [appId, setAppId] = useState(auth.app_id || ''), [secret, setSecret] = useState(''), [redirect, setRedirect] = useState(auth.redirect_uri || 'http://127.0.0.1:18765/callback');
   const [authUrl, setAuthUrl] = useState('');
   const [openError, setOpenError] = useState('');
+  const [showArchived, setShowArchived] = useState(false), [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [section, setSection] = useState<'requirements' | 'sources' | 'auth'>('requirements');
   useEffect(() => { setDraft(project ? { ...fresh(), ...project, fields: { ...defaultFields, ...project.fields } } : fresh()); }, [project?.id]);
   useEffect(() => { if (auth.app_id) setAppId(auth.app_id); if (auth.redirect_uri) setRedirect(auth.redirect_uri); }, [auth.app_id, auth.redirect_uri]);
@@ -22,7 +23,9 @@ export default function Settings({ projects, project, auth, run, busy, onProject
     <aside className="connections-project-list" aria-label="项目连接列表">
       <div className="connections-list-heading"><h2>项目</h2><span>{projects.length}</span></div>
       <button className="button" disabled={busy} onClick={() => { setDraft(fresh()); setSection('requirements'); }}><Icon name="plus" size={14}/>新建连接</button>
-      <div className="connections-project-items">{projects.map(p => <button key={p.id} disabled={busy} aria-pressed={draft.id === p.id} className={draft.id === p.id ? 'selected' : ''} onClick={() => { onProject(p.id); setDraft({ ...fresh(), ...p, fields: { ...defaultFields, ...p.fields } }); }}><strong>{p.name}</strong><span>{p.table_id ? '飞书需求表' : '本地项目'}</span></button>)}</div>
+      <label className="checkbox-label connections-archive-toggle"><input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)}/>显示已归档项目</label>
+      <div className="connections-project-items">{projects.filter(p => showArchived || !p.archived).map(p => <button key={p.id} disabled={busy} aria-pressed={draft.id === p.id} className={draft.id === p.id ? 'selected' : ''} onClick={() => { if (!p.archived) onProject(p.id); setDraft({ ...fresh(), ...p, fields: { ...defaultFields, ...p.fields } }); }}><strong>{p.name}</strong><span>{p.archived ? '已归档' : p.table_id ? '飞书需求表' : '本地项目'}</span></button>)}</div>
+      {draft.id && <div className="connections-project-actions"><button className="button small" disabled={busy} onClick={() => { const saved = projects.find(p => p.id === draft.id)!; void run<Project>('project_archive', { project: saved.id, archived: !saved.archived }, saved.archived ? '项目已恢复' : '项目已归档').then(p => { if (p) { setShowArchived(true); setDraft({ ...fresh(), ...p }); } }); }}>{projects.find(p => p.id === draft.id)?.archived ? '恢复项目' : '归档项目'}</button><button className="button small danger" disabled={busy} onClick={() => setDeleteTarget(projects.find(p => p.id === draft.id) || null)}>删除项目</button></div>}
     </aside>
     <div className="connections-detail">
     <nav className="connections-tabs" aria-label="连接配置分类">{([['requirements', '需求表'], ['sources', '关联表'], ['auth', '飞书授权']] as const).map(([id, label]) => <button key={id} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>{label}</button>)}</nav>
@@ -41,6 +44,7 @@ export default function Settings({ projects, project, auth, run, busy, onProject
       <section className="settings-card quiet"><h3>连接后的工作方式</h3><ol><li>点击“读取飞书”，需求进入本地工作台。</li><li>在本地调整任务、依赖和排期。</li><li>进入“同步与回写”，选择字段后提交。</li></ol><p>个人分支默认只在本地。LinkinNotes 仅显示主动关联的待办，私人笔记不进入飞书。</p></section>
     </div>
     </div>
+    {deleteTarget && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget && !busy) setDeleteTarget(null); }}><section className="modal" role="dialog" aria-modal="true" aria-label="删除项目确认"><header><h2>删除项目“{deleteTarget.name}”？</h2></header><p>将永久删除此项目的本地任务、依赖、笔记、版本记录和连接配置，无法恢复。关联待办也将从联动列表移除。飞书源表和其他项目不受影响。</p><div className="button-row right"><button className="button" disabled={busy} onClick={() => setDeleteTarget(null)}>取消</button><button className="button danger" disabled={busy} onClick={() => { void run('project_delete', { project: deleteTarget.id, confirmed: true }, '本地项目已删除').then(result => { if (result) { setDeleteTarget(null); setDraft(fresh()); } }); }}>确认删除项目</button></div></section></div>}
   </div>;
 }
 

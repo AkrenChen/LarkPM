@@ -20,9 +20,10 @@ export function platformName(value: string): string {
 export function versionRows(project: Project, overrides = project.version_overview || []): VersionOverviewRow[] {
   const cache = project.source_cache?.versions;
   const sources = cache?.rows || Object.values(cache?.online || {}).filter(row => row !== null);
+  const removed = new Set(project.version_overview_removed || []);
   const rows = new Map<string, VersionOverviewRow>();
   for (const row of sources) {
-    if (!row.version) continue;
+    if (!row.version || removed.has(`source:${row.id}`)) continue;
     rows.set(`source:${row.id}`, { id: `source:${row.id}`, version: row.version, platform: platformName(row.platform), submitted: row.submitted?.slice(0, 10) || '', description: row.description || '', status: row.status || '', origin: 'source' });
   }
   for (const [version, date] of Object.entries(project.targets || {})) {
@@ -32,6 +33,7 @@ export function versionRows(project: Project, overrides = project.version_overvi
     rows.set(`legacy:${version}`, { id: `legacy:${version}`, version: number, platform: platformName(platform), submitted: date, description: project.target_details?.[version]?.description || '', status: '', origin: 'legacy' });
   }
   for (const override of overrides) {
+    if (removed.has(override.id)) continue;
     const base = rows.get(override.id);
     const { released: previousDate, ...values } = override;
     if (values.submitted === undefined && previousDate !== undefined) values.submitted = previousDate;
@@ -40,6 +42,9 @@ export function versionRows(project: Project, overrides = project.version_overvi
   }
   const merged = new Map<string, VersionOverviewRow>();
   for (const row of rows.values()) {
+    if (row.origin === 'legacy' && row.platform === '双端' && [...rows.values()].some(other =>
+      other.origin !== 'legacy' && other.platform !== '双端' && other.submitted &&
+      other.version.trim().toLowerCase() === row.version.trim().toLowerCase())) continue;
     const key = `${row.version.trim().toLowerCase()}|${platformName(row.platform)}`;
     const previous = merged.get(key);
     if (!previous) merged.set(key, row);
@@ -47,6 +52,21 @@ export function versionRows(project: Project, overrides = project.version_overvi
     else merged.set(key, { ...previous, submitted: previous.submitted || row.submitted, description: previous.description || row.description });
   }
   return [...merged.values()].sort((a, b) => compareVersions(b.version, a.version) || b.submitted.localeCompare(a.submitted) || a.platform.localeCompare(b.platform) || a.id.localeCompare(b.id));
+}
+
+export function versionOverviewPatch(project: Project, rows: VersionOverviewRow[]) {
+  const sources = new Map(versionRows({ ...project, targets: {}, target_details: {} }, []).map(row => [row.id, row]));
+  const overrides = rows.map(row => {
+    const source = sources.get(row.id);
+    if (!source) return { ...row, origin: 'local' as const };
+    const patch: Pick<VersionOverviewRow, 'id'> & Partial<VersionOverviewRow> = { id: row.id, origin: 'source' };
+    for (const key of ['version', 'platform', 'submitted', 'description'] as const) if (row[key] !== source[key]) patch[key] = row[key];
+    return patch;
+  }).filter(row => row.origin === 'local' || Object.keys(row).length > 2);
+  const retained = new Set(rows.map(row => row.id));
+  const removedSources = versionRows(project).filter(row => row.origin === 'source' && !retained.has(row.id)).map(row => row.id);
+  const removed = [...new Set([...(project.version_overview_removed || []), ...removedSources])];
+  return { version_overview: overrides, version_overview_removed: removed, targets: {}, target_details: {}, current_target: '' };
 }
 
 export function latestVersionTarget(project: Project) {

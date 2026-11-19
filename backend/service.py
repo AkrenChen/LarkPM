@@ -6,16 +6,46 @@ import urllib.parse
 from workspace import Conflict, FIELDS, Workspace, data_dir
 from project_sources import normalize_source, refreshed_cache
 
-DEFAULT_FIELDS = dict(title='需求内容', start='开始时间', end='截止时间', owners='处理人', state='开发状态', parent='父记录', version='版本', description='需求描述及反馈', department='部门')
+DEFAULT_FIELDS = dict(title='需求内容', start='开始时间', end='截止时间', owners='处理人', state='开发状态', parent='父记录', version='版本', description='需求描述及反馈', department='部门', priority='优先级')
 
 
 class Service:
-    def __init__(self, path=None, remote=None):
+    def __init__(self, path=None, remote=None, native=None):
         self.w = Workspace(path)
         if remote is None:
             from remote import Remote
             remote = Remote(config_dir=(pathlib.Path(path).parent if path else data_dir()) / 'auth')
         self.remote = remote
+        self.native = native
+        from source_refresh import SourceRefresh
+        self.sources = SourceRefresh(self.w.db.execute('PRAGMA database_list').fetchone()[2], remote)
+
+    def native_notes(self, action, params):
+        from standalone_notes import PersonalNotes
+        from personal_board import settings
+        notes = PersonalNotes(self.w)
+        if action != 'snapshot':
+            return notes.mutate(action, params)
+        if settings(self.w)['sync'] and self.native is None:
+            from native_notes import NativeNotes
+            self.native = NativeNotes()
+        if settings(self.w)['sync'] and getattr(self.native, 'background', False):
+            import threading
+            worker = getattr(self, '_notes_worker', None)
+            if worker is None or not worker.is_alive():
+                path = self.w.db.execute('PRAGMA database_list').fetchone()[2]
+                def synchronize():
+                    workspace = Workspace(path)
+                    try:
+                        self._notes_status = PersonalNotes(workspace).snapshot(self.native)
+                    finally:
+                        workspace.close()
+                self._notes_worker = threading.Thread(target=synchronize, daemon=True)
+                self._notes_worker.start()
+            result = notes.snapshot()
+            result.update({key: value for key, value in getattr(self, '_notes_status', {}).items() if key in ('pending', 'failed', 'sync_error')})
+            return result
+        return notes.snapshot(self.native)
 
     def project(self, project_id):
         found = next((p for p in self.w.projects() if p['id'] == project_id), None)
@@ -24,8 +54,16 @@ class Service:
         return found
 
     def save_project(self, values):
+        with self.w.db:
+            self.w.db.execute('BEGIN IMMEDIATE')
+            return self._save_project(values)
+
+    def _save_project(self, values):
         p = dict(values)
+        p.pop('source_refresh', None)
         p.pop('department_catalog', None)
+        p.pop('version_catalog', None)
+        p.pop('priority_catalog', None)
         p.pop('workflow_columns', None)
         previous = next((old for old in self.w.projects() if old['id'] == p.get('id')), None)
         p.pop('source_cache', None)
@@ -56,7 +94,11 @@ class Service:
         if not p.get('name', '').strip() or not p.get('base_token') or not p.get('table_id'):
             raise ValueError('请填写项目名称及 Base、Table，或粘贴带 table 参数的表链接')
         p['fields'] = dict(DEFAULT_FIELDS, **p.get('fields', {}))
-        if any(not p['fields'].get(k) for k in FIELDS):
+        if previous and all(p.get(k) == previous.get(k) for k in ('base_token', 'table_id')) and previous.get('fields', {}).get('version', '版本') == p['fields'].get('version') and 'version_catalog' in previous:
+            p['version_catalog'] = previous['version_catalog']
+        if previous and all(p.get(k) == previous.get(k) for k in ('base_token', 'table_id')) and previous.get('fields', {}).get('priority', '优先级') == p['fields'].get('priority') and 'priority_catalog' in previous:
+            p['priority_catalog'] = previous['priority_catalog']
+        if any(not p['fields'].get(k) for k in FIELDS if k != 'priority'):
             raise ValueError('标题、日期、处理人和状态必须配置字段映射')
         p.setdefault('targets', {})
         import datetime
@@ -69,29 +111,50 @@ class Service:
         return saved
 
     def sync_sources(self, project_id):
+        from source_refresh import apply_cache
         project = self.project(project_id)
-        cache = dict(project.get('source_cache', {}))
         for kind, source in project.get('sources', {}).items():
             try:
-                cache[kind] = refreshed_cache(self.remote, source, kind)
+                result = refreshed_cache(self.remote, source, kind)
             except Exception as error:
-                cache[kind] = dict(cache.get(kind, {}), error=str(error))
-        self.w.save_project(dict(project, source_cache=cache))
-        return cache
+                result = dict(error=str(error))
+            apply_cache(self.w, project_id, kind, source, result)
+        return self.project(project_id).get('source_cache', {})
 
     def sync_departments(self, project_id):
         project = self.project(project_id)
         if project.get('demo'):
             return project.get('department_catalog', dict(field='部门', options=[], error='示例未配置部门选项'))
         catalog = self.remote.departments(project)
-        self.w.save_project(dict(project, department_catalog=catalog))
+        self.update_catalogs(project, dict(department_catalog=catalog))
         return catalog
 
-    def sync(self, project_id):
+    def sync_versions(self, project_id):
+        project = self.project(project_id)
+        if project.get('demo'):
+            return dict(field='版本', selectable=False, options=[])
+        catalog = self.remote.versions(project)
+        self.update_catalogs(project, dict(version_catalog=catalog))
+        return catalog
+
+    def update_catalogs(self, expected, catalogs):
+        with self.w.db:
+            self.w.db.execute('BEGIN IMMEDIATE')
+            row = self.w.db.execute('SELECT body FROM projects WHERE id=?', (expected['id'],)).fetchone()
+            if not row:
+                return
+            current = json.loads(row[0])
+            if any(current.get(key) != expected.get(key) for key in ('base_token', 'table_id', 'fields')):
+                return
+            current.update(catalogs)
+            self.w.db.execute('UPDATE projects SET body=? WHERE id=?', (json.dumps(current, ensure_ascii=False), current['id']))
+
+    def sync(self, project_id, catalogs=True):
         p = self.project(project_id)
         if p.get('demo'):
             raise ValueError('示例项目使用虚构数据，请新建真实项目连接后读取飞书')
-        records = self.remote.records(p)
+        bundle = self.remote.read_requirements(p) if catalogs and hasattr(self.remote, 'read_requirements') else None
+        records = bundle['records'] if bundle is not None else self.remote.records(p)
         by_id = {r['record_id']: r for r in records}
         containers = {parent for r in records for parent in (r.get('parents') or ([r['parent_id']] if r.get('parent_id') else []))}
         for r in records:
@@ -110,15 +173,19 @@ class Service:
                         break
                     parent_id = parent_ids[0]
         self.w.merge_remote(records, p['base_token'] + '/' + p['table_id'], project_id)
-        warning = ''
-        if hasattr(self.remote, 'departments'):
+        warning = bundle.get('warning', '') if bundle is not None else ''
+        if bundle is not None:
+            self.update_catalogs(p, bundle['catalogs'])
+        if bundle is None and catalogs and hasattr(self.remote, 'versions'):
             try:
-                warning = self.sync_departments(project_id).get('error', '')
+                self.sync_versions(project_id)
+            except Exception:
+                warning = '版本选项更新失败，已保留上次列表，请检查版本字段映射后重试'
+        if bundle is None and catalogs and hasattr(self.remote, 'departments'):
+            try:
+                warning = '；'.join(filter(None, [warning, self.sync_departments(project_id).get('error', '')]))
             except Exception:
                 warning = '部门选项更新失败，已保留上次列表；请在人员与部门中重试'
-        failures = [c['error'] for c in self.sync_sources(project_id).values() if c.get('error')]
-        if failures:
-            warning = '；'.join(filter(None, [warning, *failures]))
         return {'count': len(records), 'warning': warning}
 
     def write(self, project_id, selections):
@@ -136,7 +203,7 @@ class Service:
             if not fields or any(k not in FIELDS for k in fields):
                 raise ValueError('请选择允许回写的字段')
             expected[task['id']] = {k: task[k] for k in fields}
-        self.sync(project_id)
+        self.sync(project_id, catalogs=False)
         for selection in selections:
             task = self.w.get(selection['id'])
             if task['conflicts'] or task['source'].get('missing'):
@@ -160,14 +227,50 @@ class Service:
         return {'written': written}
 
     def call(self, method, p):
+        if method == 'personal_native':
+            return self.native_notes(p.get('action', 'snapshot'), p)
+        if method == 'personal_prepare':
+            from personal_board import prepare
+            self.project(p['project'])
+            return prepare(self.w, p['project'])
+        if method == 'personal_move':
+            from personal_board import move
+            return move(self.w, p['id'], p['quadrant'], p['revision'], 'pm')
+        if method == 'personal_sync':
+            from personal_board import set_sync
+            return set_sync(self.w, p['enabled'])
+        if method == 'versions_sync':
+            return self.sync_versions(p['project'])
+        if method == 'task_accept':
+            task = self.w.get(p['id'])
+            self.w._check(task, p['revision'])
+            project = self.project(task['project'])
+            if task.get('source'):
+                source = task['source']
+                if source.get('missing') or source['scope'] != project['base_token'] + '/' + project['table_id']:
+                    raise ValueError('来源记录不可用，请重新读取飞书后再验收')
+                self.remote.accept(project, source['record_id'])
+            return self.w.set_acceptance(task['id'], p['revision'])
+        if method == 'project_archive':
+            return self.w.archive_project(p['project'], p['archived'])
+        if method == 'project_delete':
+            self.project(p['project'])
+            return self.w.delete_project(p['project'], p.get('confirmed'))
         if method == 'snapshot':
-            return dict(self.w.snapshot(p.get('project')), candidates=self.w.candidates(p.get('project')), auth=self.remote.status(), settings=self.w.settings())
+            from publishing import candidates
+            projects = [self.project(p['project'])] if p.get('project') else self.w.projects()
+            creations = [dict(item, project=project['id']) for project in projects if not project.get('archived') and not project.get('demo') for item in candidates(self.w, project, True)]
+            snapshot = self.w.snapshot(p.get('project'))
+            snapshot['projects'] = [self.sources.view(project) for project in snapshot['projects']]
+            return dict(snapshot, creations=[item for item in creations if not item['ignored']], ignored_creations=[item for item in creations if item['ignored']], candidates=self.w.candidates(p.get('project')), auth=self.remote.status(), settings=self.w.settings())
         if method == 'settings_save':
             return self.w.save_settings(p)
         if method == 'departments_sync':
             return self.sync_departments(p['project'])
         if method == 'project_sources_sync':
             return self.sync_sources(p['project'])
+        if method == 'project_sources_refresh':
+            return dict(pending=self.sources.start(self.project(p['project']), p.get('kinds')))
         if method == 'open_project_table':
             project = self.project(p['project'])
             kind = p.get('kind')
@@ -182,7 +285,7 @@ class Service:
             raise ValueError('通讯录接口已关闭，请在人员与部门中维护本地状态')
         if method == 'create':
             self.project(p['project'])
-            return self.w.create(p)
+            return self.w.create(p, upstream=p.get('upstream'))
         if method == 'edit':
             return self.w.edit(p['id'], p['patch'], p['revision'])
         if method == 'remove_local':
@@ -190,7 +293,7 @@ class Service:
         if method == 'workflow_arrange':
             from workflow import arrange
             self.project(p['project'])
-            return arrange(self.w, p['project'], p['systems'], p['revisions'])
+            return arrange(self.w, p['project'], p['systems'], p['revisions'], include_snapshot=False, version=p.get('version') or None)
         if method == 'workflow_column_save':
             from workflow import save_column
             return save_column(self.w, p['project'], p['name'], p.get('priority', ''), p.get('id'), p.get('previous_name'))
@@ -209,11 +312,23 @@ class Service:
         if method == 'resolve':
             return self.w.resolve(p['id'], p['field'], p['choice'], p['revision'])
         if method == 'project_save':
-            return self.save_project(p)
+            previous = next((project for project in self.w.projects() if project['id'] == p.get('id')), {})
+            saved = self.save_project(p)
+            changed = [kind for kind, source in saved.get('sources', {}).items() if source != previous.get('sources', {}).get(kind)]
+            self.sources.start(saved, changed)
+            return self.sources.view(saved)
         if method == 'sync':
-            return self.sync(p['project'])
+            result = self.sync(p['project'])
+            result['source_refresh'] = self.sources.start(self.project(p['project']))
+            return result
         if method == 'write':
             return self.write(p['project'], p['selections'])
+        if method == 'publish':
+            from publishing import publish
+            return publish(self, p['project'], p['creations'])
+        if method == 'creation_ignore':
+            from publishing import ignore
+            return ignore(self.w, self.project(p['project']), p['kind'], p['id'], p['ignored'])
         if method == 'auth_configure':
             result = self.remote.configure(**p)
             project = next((p for p in self.w.projects() if not p.get('demo')), None)

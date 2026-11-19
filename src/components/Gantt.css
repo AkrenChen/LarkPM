@@ -27,6 +27,7 @@
 .gantt-merged-requirement small{font-size:10px;color:#9ba2ac;line-height:15px}
 .weekly-gantt .gantt-group-background{background:#f6f7f9}
 .weekly-gantt .gantt-bar,.weekly-gantt .gantt-test-bar{height:20px;font-size:10px;padding:1px 7px;line-height:16px;border-radius:3px}
+.weekly-gantt .gantt-requirement-summary-bar{position:absolute;height:20px;border:1px solid;border-radius:3px;top:6px;z-index:2;opacity:.92;pointer-events:none}
 .weekly-gantt .gantt-bar.paused,.weekly-gantt .gantt-bar.closed{opacity:.6}
 .weekly-gantt .gantt-bar.done{opacity:.75}
 .gantt-test-row{height:28px;display:flex;border-bottom:1px solid #eeeaf3}

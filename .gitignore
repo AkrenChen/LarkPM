@@ -14,3 +14,8 @@ __pycache__/
 .playwright-cli/
 output/
 src-tauri/gen/
+task_plan.md
+progress.md
+findings.md
+PROJECT_BRIEF.md
+docs/

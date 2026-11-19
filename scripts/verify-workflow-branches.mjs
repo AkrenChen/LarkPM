@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import { workflowLayout, workflowIds, moveWorkflow } from '../src/workflowLayout.ts';
+
+const task = (id, upstream = [], extra = {}) => ({ id, module: 'S', upstream, state: 'todo', ...extra });
+const tasks = [task('a'), task('b'), task('c'), task('branch', ['b']), task('common', ['a','b','c']), task('later', ['common'])];
+const [system] = workflowLayout(tasks, []);
+assert.deepEqual(system.stages, [['a','b','c'], ['common'], ['later']]);
+assert.deepEqual(system.branches, { b: ['branch'] });
+assert.deepEqual(workflowIds(system), ['a','b','branch','c','common','later']);
+let [next] = moveWorkflow([system], ['branch'], { module: 'S', index: 0, parallel: true });
+assert.deepEqual(next.stages[0], ['a','b','c','branch']);
+assert.deepEqual(next.branches, {});
+[next] = moveWorkflow([system], ['c'], { module: 'S', index: 0, parallel: false, parent: 'branch' });
+assert.deepEqual(next.branches, { b: ['branch'], branch: ['c'] });
+assert.deepEqual(next.stages[0], ['a','b']);
+assert.equal(moveWorkflow([system], ['b'], { module: 'S', index: 0, parallel: false, parent: 'branch' }), null);
+const moved = moveWorkflow([system, {module:'T', stages:[]}], ['b'], {module:'T', index:0, parallel:false});
+assert.deepEqual(moved[0].stages[0], ['a','c']);
+assert.deepEqual(moved[1], {module:'T', stages:[['b']], branches:{b:['branch']}});
+const saved = tasks.map(t => ({...t, workflow_stage: t.id==='common' ? 1 : t.id==='later' ? 2 : 0, workflow_parent:t.id==='branch'?'b':null}));
+assert.deepEqual(workflowLayout(saved, []), [system]);
+assert.equal(workflowIds(workflowLayout(tasks.map(t=>({...t, state:'done'})),[])[0]).length, tasks.length);
+console.log('Branch layout, exact gating, nested branches, promotion, subtree cross-column move and self-cycle protection passed.');

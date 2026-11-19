@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 
 API = 'https://open.feishu.cn/open-apis'
@@ -22,7 +22,7 @@ TOKEN = API + '/authen/v2/oauth/token'
 LOCAL_TIMEZONE = timezone(timedelta(hours=8))
 DEFAULT_FIELDS = {'title': '需求内容', 'start': '开始时间', 'end': '截止时间',
                   'owners': '处理人', 'state': '开发状态', 'parent_id': '父记录',
-                  'version': '版本', 'description': '需求描述及反馈', 'acceptance': '验收状态'}
+                  'version': '版本', 'description': '需求描述及反馈', 'acceptance': '验收状态', 'priority': '优先级'}
 DEFAULT_STATES = {'todo': '未开始', 'active': '进行中', 'done': '已完成',
                   'paused': '暂停', 'closed': '关闭需求'}
 
@@ -197,7 +197,7 @@ class Feishu:
         data = None if body is None else json.dumps(body, ensure_ascii=False).encode('utf-8')
         request = Request(url, data=data, headers=headers, method=method)
         try:
-            with urlopen(request, timeout=30) as response:
+            with build_opener(ProxyHandler({})).open(request, timeout=30) as response:
                 return json.loads(response.read().decode('utf-8'))
         except HTTPError as error:
             try:
@@ -412,7 +412,7 @@ class Feishu:
                 'state_unmapped': bool(remote_state and remote_state not in states),
                 'module': parents[0] if parents else '', 'parent_id': parents[0] if parents else '',
                 'parents': parents, 'version': _text(cell('version')),
-                'description': _text(cell('description')),
+                'description': _text(cell('description')), 'priority': _text(cell('priority')),
                 'acceptance': _text(fields.get(mapping.get('acceptance', '验收状态')))}
 
     def records(self):
@@ -430,9 +430,9 @@ class Feishu:
             raise FeishuError('飞书记录 ID 不合法。')
         if not isinstance(fields, dict) or not fields:
             raise FeishuError('请选择至少一个需要写回的字段。')
-        allowed = {'title', 'start', 'end', 'owners', 'state'}
+        allowed = {'title', 'start', 'end', 'owners', 'state', 'acceptance', 'priority'}
         if fields.keys() - allowed:
-            raise FeishuError('只允许写回标题、起止时间、处理人及工作状态；不会修改验收或个人笔记。')
+            raise FeishuError('只允许写回标题、起止时间、处理人、工作状态和验收通过标记。')
         result = {}
         for key, value in fields.items():
             field_name = self._config['field_map'].get(key)
@@ -442,6 +442,14 @@ class Feishu:
                 if not isinstance(value, str) or not value.strip() or len(value) > 10000:
                     raise FeishuError('标题必须是 1 到 10000 字的文本。')
                 converted = value.strip()
+            elif key == 'acceptance':
+                if value != '验收通过':
+                    raise FeishuError('验收操作仅支持标记验收通过。')
+                converted = value
+            elif key == 'priority':
+                if not isinstance(value, str) or len(value) > 100:
+                    raise FeishuError('优先级必须是有效选项名称。')
+                converted = value or None
             elif key in ('start', 'end'):
                 if value in ('', None):
                     converted = None
@@ -466,6 +474,21 @@ class Feishu:
         payload = self._request('PUT', self._table_url() + '/records/' + quote(record_id, safe='')
                                 + '?user_id_type=open_id', {'fields': result})
         return self._normalize(payload.get('data', {}).get('record', {}))
+
+    def create_record(self, fields, client_token):
+        import uuid
+        try:
+            if str(uuid.UUID(client_token, version=4)) != client_token or uuid.UUID(client_token).version != 4:
+                raise ValueError()
+        except (ValueError, TypeError, AttributeError):
+            raise FeishuError('创建记录需要标准UUIDv4幂等标识。') from None
+        if not isinstance(fields, dict) or not fields:
+            raise FeishuError('创建记录不能为空。')
+        payload = self._request('POST', self._table_url() + '/records?user_id_type=open_id&client_token=' + quote(client_token, safe=''), {'fields': fields})
+        record = payload.get('data', {}).get('record', {})
+        if not record.get('record_id'):
+            raise FeishuError('创建响应缺少记录ID，请保留本地提交并重试核实。')
+        return self._normalize(record)
 
     authorize = begin_auth
     begin_login = begin_auth

@@ -1,4 +1,7 @@
-import type { GanttScale } from '../preferences';
+import type { NodeShortcuts } from '../nodeShortcuts';
+import NodeShortcutSettings from './NodeShortcutSettings';
+import DesktopWindowSettings from './DesktopWindowSettings';
+import type { GanttScale, BoardMode } from '../preferences';
 import ListSelect from './ListSelect';
 import { useEffect, useState } from 'react';
 import { employmentNames, isUnavailable, type EmploymentStatus, type AppSettings, type Auth, type Person, type Project, type Run } from '../types';
@@ -8,11 +11,11 @@ import DepartmentSelect from './DepartmentSelect';
 import './SettingsHub.css';
 
 type Section = 'profile' | 'people' | 'connections' | 'personalization';
-type Props = { ganttScale: GanttScale; onGanttScale: (value: GanttScale) => void; settings: AppSettings; projects: Project[]; project?: Project; auth: Auth; run: Run; busy: boolean; onProject: (id: string) => void; initialSection: Section };
+type Props = { boardMode: BoardMode; onBoardMode: (value: BoardMode) => void; nodeShortcuts: NodeShortcuts; onNodeShortcuts: (value: NodeShortcuts) => void; ganttScale: GanttScale; onGanttScale: (value: GanttScale) => void; settings: AppSettings; projects: Project[]; project?: Project; auth: Auth; run: Run; busy: boolean; onProject: (id: string) => void; initialSection: Section };
 const sections: { id: Section; title: string; hint: string; icon: string }[] = [
   { id: 'profile', title: '使用者', hint: '名称与我的任务', icon: 'person' },
   { id: 'people', title: '人员与部门', hint: '跨项目的默认归属', icon: 'board' },
-  { id: 'personalization', title: '个性化', hint: '甘特显示偏好', icon: 'settings' },
+  { id: 'personalization', title: '个性化', hint: '看板、甘特与快捷键', icon: 'settings' },
   { id: 'connections', title: '项目与连接', hint: '需求表、字段与飞书授权', icon: 'link' },
 ];
 
@@ -59,7 +62,7 @@ export default function SettingsHub({ settings, initialSection, ...props }: Prop
   return <div className="settings-hub">
     <nav className="settings-tabs" aria-label="设置分类">{sections.map(s => <button key={s.id} title={s.hint} aria-current={section === s.id ? 'page' : undefined} className={section === s.id ? 'selected' : ''} onClick={() => setSection(s.id)}><Icon name={s.icon} size={16}/><span>{s.title}</span></button>)}</nav>
     <div className="settings-content">
-      {section === 'personalization' ? <section className="settings-card preference-card"><header><div className="settings-card-icon"><Icon name="settings"/></div><div><h2>个性化</h2><p>本机跨项目共用，选择后自动保存。</p></div></header><label>甘特显示周期<ListSelect aria-label="甘特显示周期" value={props.ganttScale} onChange={event => props.onGanttScale(event.target.value as GanttScale)}><option value="week">按周 · 7天</option><option value="fortnight">双周 · 14天</option><option value="month">按月 · 自然月</option></ListSelect><small>左右箭头按所选周期翻页，右侧按钮返回当前周期。</small></label></section> : section === 'connections' ? <ProjectConnections {...props}/> : <>
+      {section === 'personalization' ? <section className="settings-card preference-card"><header><div className="settings-card-icon"><Icon name="settings"/></div><div><h2>个性化</h2><p>本机跨项目共用，选择后自动保存。</p></div></header><label>需求总览布局<ListSelect aria-label="需求总览布局" value={props.boardMode} onChange={event => props.onBoardMode(event.target.value as BoardMode)}><option value="horizontal">横向看板</option><option value="feed">信息流 · 自适应列数</option></ListSelect><small>按窗口宽度显示完整列；编辑任务保留所在列，点击需求标题折叠或展开。</small></label><label>甘特显示周期<ListSelect aria-label="甘特显示周期" value={props.ganttScale} onChange={event => props.onGanttScale(event.target.value as GanttScale)}><option value="week">按周 · 7天</option><option value="fortnight">双周 · 14天</option><option value="month">按月 · 自然月</option></ListSelect><small>左右箭头按所选周期翻页，右侧按钮返回当前周期。</small></label><DesktopWindowSettings/><NodeShortcutSettings value={props.nodeShortcuts} onChange={props.onNodeShortcuts}/></section> : section === 'connections' ? <ProjectConnections {...props}/> : <>
         {stale && <div className="banner warning"><span>设置已在另一处更新，当前输入保留。重新载入会放弃此处未保存的修改。</span><button className="button small" onClick={() => load(settings, true)}>重新载入设置</button></div>}
         {section === 'profile' ? <section className="settings-card preference-card"><header><div className="settings-card-icon"><Icon name="person"/></div><div><h2>使用者</h2><p>让工作台知道你是谁，方便归类个人任务。</p></div></header>
           <label>使用者名称<input maxLength={200} value={profile.name} onChange={e => setProfile({ ...profile, name: e.target.value })} placeholder="你的常用名称"/></label>

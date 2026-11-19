@@ -14,9 +14,9 @@ div.detail-overlay{align-items:center;justify-content:center;padding:24px}
 .inline-value-display:hover{background:#f5f6f7;border-color:#e5e7ea}
 .inline-value-display:focus-visible{outline:2px solid #a4abb4;outline-offset:1px}
 .task-inline-title .inline-value-display{font-size:17px;font-weight:600;line-height:1.5;color:#333c48;padding:3px 6px}
-.task-inline-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 16px}
-.inline-field{display:flex;align-items:flex-start;gap:6px;min-width:0;padding:2px 0}
-.inline-field-label{width:54px;flex-shrink:0;padding-top:6px;font-size:10px;line-height:20px;color:#9ba1aa}
+.task-inline-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 18px}
+.inline-field{display:flex;align-items:center;gap:6px;min-width:0;padding:0;min-height:30px}
+.inline-field-label{width:48px;flex-shrink:0;font-size:10px;line-height:20px;color:#929ba8}
 .inline-field-wide{margin-top:3px}
 .inline-value-editor{position:relative;min-width:0;padding:3px 0}
 .inline-value-editor>input,.inline-value-editor>textarea{width:100%;font-size:12px;padding:5px 7px;min-height:30px;line-height:20px}
@@ -41,9 +41,7 @@ div.detail-overlay{align-items:center;justify-content:center;padding:24px}
 
 .detail-panel .task-inline-form .prototype-option{flex-direction:row;align-items:center;min-height:24px;margin:8px 0 4px;padding:0;border:0;background:transparent;gap:6px;font-size:11px}
 .detail-panel .task-inline-form .prototype-option input{margin:0}
-.detail-panel .status-pill.active{background:#fff0ba;color:#805000}
 .detail-panel .status-pill.done{background:#e4f4e9;color:#27633c}
-.detail-panel .status-pill.todo{background:#ffe9e5;color:#a43f36}
 .detail-panel .status-pill.paused,.detail-panel .status-pill.closed{background:#eceef1;color:#66717e}
 
 .detail-overlay .detail-panel{position:relative}
@@ -67,3 +65,7 @@ div.detail-overlay{align-items:center;justify-content:center;padding:24px}
 .detail-panel .task-remove-button:hover{background:#fcece9}
 .task-remove-confirm{margin-top:10px;padding:12px;border:1px solid #edd3cf;border-radius:7px;background:#fff8f7}
 .task-remove-confirm p{font-size:12px;line-height:1.7;color:#865850;margin:0 0 10px}
+.task-inline-title .inline-value-editor{padding:0}
+.task-inline-title .inline-value-editor>textarea{display:block;min-height:32px;padding:3px 6px;font-size:17px;font-weight:600;line-height:1.5;color:#333c48;border:1px solid transparent;border-radius:4px;background:#f7f8fa;resize:none;overflow:hidden;box-shadow:none;outline:none}
+.task-inline-title .inline-value-editor>textarea:focus{background:#fafbfc;outline:none;box-shadow:none}
+.new-task-module-value{display:block;padding:8px 0;color:#46525f;font-size:13px;line-height:1.6;overflow-wrap:anywhere}

@@ -4,6 +4,9 @@ use std::os::windows::process::CommandExt;
 use tauri::{Manager, State, menu::{Menu, MenuItem}, tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState}};
 use serde_json::{json, Value};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+use tauri_plugin_global_shortcut::ShortcutState;
+mod desktop_preferences;
+mod window_visibility;
 
 fn window_state_flags() -> StateFlags {
     StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
@@ -58,16 +61,28 @@ async fn rpc(app: tauri::AppHandle, _backend: State<'_, Backend>, method: String
 }
 
 fn show(app: &tauri::AppHandle) {
-    if let Some(w) = app.get_webview_window("main") { let _=w.show(); let _=w.unminimize(); let _=w.set_focus(); }
+    window_visibility::set_visible(app, true);
 }
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app,_,_|show(app)))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app,_,event| {
+            if event.state == ShortcutState::Pressed {
+                if let Some(window) = app.get_webview_window("main") {
+                    if window.is_visible().unwrap_or(false) && !window.is_minimized().unwrap_or(false) && window.is_focused().unwrap_or(false) {
+                        let _ = app.save_window_state(window_state_flags());
+                        window_visibility::set_visible(app, false);
+                    } else { show(app); }
+                }
+            }
+        }).build())
         .plugin(tauri_plugin_window_state::Builder::default().with_state_flags(window_state_flags()).build())
         .manage(Backend(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![rpc,open_auth_url])
+        .manage(desktop_preferences::DesktopState::default())
+        .invoke_handler(tauri::generate_handler![rpc,open_auth_url,desktop_preferences::desktop_preferences_get,desktop_preferences::desktop_preferences_save])
         .setup(|app| {
+            desktop_preferences::initialize(app.handle());
             if cfg!(debug_assertions) {
                 if let Some(window) = app.get_webview_window("main") { window.set_title("LarkPM · 开发验收窗口")?; }
             }
@@ -82,7 +97,7 @@ fn main() {
                 .on_tray_icon_event(|tray,event|if let TrayIconEvent::Click {button:MouseButton::Left,button_state:MouseButtonState::Up,..}=event { show(tray.app_handle()); }).build(app)?;
             Ok(())
         })
-        .on_window_event(|window,event|if let tauri::WindowEvent::CloseRequested {api,..}=event { api.prevent_close(); let _=window.app_handle().save_window_state(window_state_flags()); let _=window.hide(); })
+        .on_window_event(|window,event|if let tauri::WindowEvent::CloseRequested {api,..}=event { api.prevent_close(); let _=window.app_handle().save_window_state(window_state_flags()); window_visibility::set_visible(window.app_handle(), false); })
         .build(tauri::generate_context!()).expect("无法初始化 LarkPM")
         .run(|app,event|if let tauri::RunEvent::Exit = event { if let Ok(mut backend)=app.state::<Backend>().0.lock() { *backend=None; } });
 }

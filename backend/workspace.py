@@ -5,8 +5,9 @@ import pathlib
 import re
 import sqlite3
 import uuid
+import time
 
-FIELDS = ('title', 'start', 'end', 'owners', 'state')
+FIELDS = ('title', 'start', 'end', 'owners', 'state', 'priority')
 STATES = ('todo', 'active', 'done', 'paused', 'closed')
 
 
@@ -31,6 +32,13 @@ class Workspace:
             CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, text TEXT NOT NULL, revision INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS preferences (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS publication_jobs (
+                project TEXT NOT NULL, scope TEXT NOT NULL, kind TEXT NOT NULL, entity_id TEXT NOT NULL,
+                token TEXT NOT NULL, payload TEXT NOT NULL, module TEXT NOT NULL, response TEXT,
+                PRIMARY KEY(project,scope,kind,entity_id));
+            CREATE TABLE IF NOT EXISTS publication_ignored (
+                project TEXT NOT NULL, scope TEXT NOT NULL, kind TEXT NOT NULL, entity_id TEXT NOT NULL,
+                PRIMARY KEY(project,scope,kind,entity_id));
         ''')
         self.db.commit()
 
@@ -50,6 +58,7 @@ class Workspace:
         task.setdefault('department_override', None)
         task.setdefault('workflow_stage', None)
         task.setdefault('module_local', False)
+        task.setdefault('priority', '')
         return task
 
     def _put(self, task):
@@ -81,6 +90,8 @@ class Workspace:
             raise ValueError('标题不能为空且最多 10000 字')
         if task['state'] not in STATES:
             raise ValueError('未知工作状态')
+        if not isinstance(task.get('priority', ''), str) or len(task.get('priority', '')) > 100:
+            raise ValueError('优先级必须是最多100字的选项名称')
         for field in ('start', 'end'):
             if task[field]:
                 import datetime
@@ -95,31 +106,61 @@ class Workspace:
                 raise ValueError('部门必须是名称列表，或使用人员默认部门')
             task['department_override'] = list(dict.fromkeys(d.strip() for d in override if d.strip()))
 
-    def create(self, values):
-        task = dict(id=str(uuid.uuid4()), project='default', title='', start='', end='', owners=[], state='todo', module='', version='',
-                    source=None, linked=False, upstream=[], branch_of=None, prototypes=False, conflicts={}, revision=0, department_override=None, workflow_stage=None, module_local=False, acceptance='', is_requirement=False)
-        task.update({k: copy.deepcopy(v) for k, v in values.items() if k in task and k not in ('id', 'revision', 'conflicts')})
-        task['upstream'] = []
-        self._validate(task)
+    def create(self, values, upstream=None):
+        task = self._new_task(values, upstream)
         with self.db:
             self._put(task)
         return self.get(task['id'])
 
+    def _new_task(self, values, upstream=None):
+        task = dict(id=str(uuid.uuid4()), project='default', title='', start='', end='', owners=[], state='todo', module='', version='',
+                    source=None, linked=False, upstream=[], branch_of=None, prototypes=False, conflicts={}, revision=0, department_override=None, workflow_stage=None, module_local=False, acceptance='', is_requirement=False, priority='')
+        task.update({k: copy.deepcopy(v) for k, v in values.items() if k in task and k not in ('id', 'revision', 'conflicts')})
+        task['created_at'] = time.time_ns()
+        if upstream is not None and (not isinstance(upstream, list) or any(not isinstance(task_id, str) for task_id in upstream)):
+            raise ValueError('前置任务必须为任务ID列表')
+        available = {t['id'] for t in self._all(task['project']) if not t.get('is_requirement')} if upstream else set()
+        if upstream and any(task_id not in available for task_id in upstream):
+            raise ValueError('前置必须是同项目现有任务')
+        task['upstream'] = list(dict.fromkeys(upstream or []))
+        self._validate(task)
+        if task['state'] == 'active' and any(self._raw(task_id)['state'] != 'done' for task_id in task['upstream']):
+            raise ValueError('上游尚未完成，请先完成上游或调整依赖')
+        return task
+
     def get(self, task_id):
         task = self._raw(task_id)
         all_tasks = {t['id']: t for t in self._all(task['project'])}
+        directory = {p['id']: p.get('department', '') for p in self._settings()['people']}
+        return self._task_view(task, all_tasks, directory)
+
+    def _task_view(self, task, all_tasks, directory):
+        task = dict(task)
+        task.setdefault('department_override', None)
+        task.setdefault('workflow_stage', None)
+        task.setdefault('module_local', False)
+        task.setdefault('priority', '')
         task['blocked_by'] = [i for i in task['upstream'] if i not in all_tasks or all_tasks[i]['state'] != 'done']
         task['readiness'] = 'blocked' if task['blocked_by'] else 'ready'
         task['pending'] = self.pending(task)
         if task['department_override'] is None:
-            directory = {p['id']: p.get('department', '') for p in self._settings()['people']}
             task['departments'] = list(dict.fromkeys(directory[o['id']] for o in task['owners'] if directory.get(o['id'])))
         else:
             task['departments'] = task['department_override']
         return task
 
+    def task_views(self, project=None, tasks=None):
+        tasks = self._all(project) if tasks is None else tasks
+        directory = {p['id']: p.get('department', '') for p in self._settings()['people']}
+        by_project = {}
+        for task in tasks:
+            by_project.setdefault(task['project'], {})[task['id']] = task
+        return [self._task_view(task, by_project[task['project']], directory) for task in tasks]
+
     def snapshot(self, project=None):
-        return {'tasks': [self.get(t['id']) for t in self._all(project) if not t.get('is_requirement')], 'projects': self.projects()}
+        from personal_board import settings, quadrant
+        config = settings(self)
+        return {'tasks': [dict(t, personal_quadrant=quadrant(t, 'pm', config)) for t in self.task_views(project) if not t.get('is_requirement')], 'projects': self.projects(), 'personal_board': config}
 
     def _guard_start(self, task, state):
         if state == 'active' and task['state'] != 'active':
@@ -137,6 +178,8 @@ class Workspace:
                 task['module_local'] = True
                 if patch['module'] != task['module']:
                     task['workflow_stage'] = None
+            if 'version' in patch:
+                task['version_local'] = True
             for k, v in patch.items():
                 if k not in (*FIELDS, 'module', 'version', 'prototypes', 'department_override'):
                     raise ValueError('不允许修改字段：' + k)
@@ -205,13 +248,15 @@ class Workspace:
         return dict(linked=len(tasks) - already_linked, already_linked=already_linked)
 
     def linkin_snapshot(self):
+        from personal_board import settings, quadrant
+        config = settings(self)
         tasks = []
         for raw in self._all():
             if not raw['linked'] or raw.get('is_requirement'):
                 continue
             task = self.get(raw['id'])
             note = self.db.execute('SELECT text,revision FROM notes WHERE id=?', (raw['id'],)).fetchone()
-            task.update(note=note[0] if note else '', note_revision=note[1] if note else 0)
+            task.update(note=note[0] if note else '', note_revision=note[1] if note else 0, personal_quadrant=quadrant(raw, 'linkin', config))
             tasks.append(task)
         return {'tasks': tasks, 'projects': self.projects()}
 
@@ -258,6 +303,34 @@ class Workspace:
     def projects(self):
         return [json.loads(row[0]) for row in self.db.execute('SELECT body FROM projects')]
 
+    def set_acceptance(self, task_id, revision):
+        with self.db:
+            self.db.execute('BEGIN IMMEDIATE')
+            task = self._raw(task_id)
+            self._check(task, revision)
+            task['acceptance'] = '验收通过'
+            self._put(task)
+        return self.get(task_id)
+
+    def archive_project(self, project_id, archived):
+        if not isinstance(archived, bool):
+            raise ValueError('无效的归档状态')
+        project = next((p for p in self.projects() if p['id'] == project_id), None)
+        if not project:
+            raise ValueError('项目不存在')
+        return self.save_project(dict(project, archived=archived))
+
+    def delete_project(self, project_id, confirmed):
+        if confirmed is not True:
+            raise ValueError('请确认删除本地项目及其任务、依赖和笔记')
+        with self.db:
+            self.db.execute('DELETE FROM notes WHERE id IN (SELECT id FROM tasks WHERE project=?)', (project_id,))
+            self.db.execute('DELETE FROM tasks WHERE project=?', (project_id,))
+            self.db.execute('DELETE FROM projects WHERE id=?', (project_id,))
+            self.db.execute('DELETE FROM publication_jobs WHERE project=?', (project_id,))
+            self.db.execute('DELETE FROM publication_ignored WHERE project=?', (project_id,))
+        return {'deleted': project_id}
+
     def _settings(self):
         row = self.db.execute('SELECT body FROM preferences WHERE id=1').fetchone()
         return json.loads(row[0]) if row else {'revision': 0, 'profile': {'name': '', 'owner_id': ''}, 'people': []}
@@ -265,10 +338,17 @@ class Workspace:
     def settings(self):
         settings = self._settings()
         people = {}
+        demo_projects = {p['id'] for p in self.projects() if p.get('demo')}
+        demo_people = {owner['id'] for task in self._all() if task['project'] in demo_projects for owner in task['owners']}
+        real_people = {owner['id'] for task in self._all() if task['project'] not in demo_projects for owner in task['owners']}
         for task in self._all():
+            if task['project'] in demo_projects:
+                continue
             for owner in task['owners']:
                 people[owner['id']] = dict(id=owner['id'], name=owner.get('name') or owner['id'], department='')
         for person in settings['people']:
+            if person['id'] in demo_people - real_people and person.get('name') == person['id']:
+                continue
             people[person['id']] = dict(person)
         for person in people.values():
             person.setdefault('employment_status', 'unknown')
@@ -326,28 +406,30 @@ class Workspace:
         if not task.get('source'):
             return {}
         base = task['source'].get('base', {})
-        return {k: {'before': base.get(k), 'after': task[k]} for k in FIELDS if task[k] != base.get(k)}
+        return {k: {'before': base.get(k, '' if k == 'priority' else None), 'after': task.get(k, '')} for k in FIELDS if task.get(k, '') != base.get(k, '' if k == 'priority' else None)}
 
     def merge_remote(self, records, scope, project='default'):
-        existing = {t['source']['record_id']: t for t in self._all(project, include_removed=True) if t.get('source') and t['source'].get('scope') == scope}
-        seen = set()
-        for record in records:
-            record = copy.deepcopy(record)
-            rid = record.pop('record_id')
-            seen.add(rid)
-            remote = {k: record.get(k, [] if k == 'owners' else 'todo' if k == 'state' else '') for k in FIELDS}
-            if rid not in existing:
-                self.create(dict(**remote, project=project, module=record.get('module', ''), version=record.get('version', ''),
-                                 acceptance=record.get('acceptance', ''),
-                                 is_requirement=record.get('is_requirement', False),
-                                 source={'record_id': rid, 'scope': scope, 'base': remote, 'missing': False}))
-                continue
-            with self.db:
-                self.db.execute('BEGIN IMMEDIATE')
+        with self.db:
+            self.db.execute('BEGIN IMMEDIATE')
+            existing = {t['source']['record_id']: t for t in self._all(project, include_removed=True) if t.get('source') and t['source'].get('scope') == scope}
+            seen = set()
+            for record in records:
+                record = copy.deepcopy(record)
+                rid = record.pop('record_id')
+                seen.add(rid)
+                remote = {k: record.get(k, [] if k == 'owners' else 'todo' if k == 'state' else '') for k in FIELDS}
+                if rid not in existing:
+                    task = self._new_task(dict(**remote, project=project, module=record.get('module', ''), version=record.get('version', ''),
+                                              acceptance=record.get('acceptance', ''), is_requirement=record.get('is_requirement', False),
+                                              source={'record_id': rid, 'scope': scope, 'base': remote, 'missing': False}))
+                    self._put(task)
+                    existing[rid] = task
+                    continue
                 task = self._raw(existing[rid]['id'])
+                before = copy.deepcopy(task)
                 base = task['source']['base']
                 for key in FIELDS:
-                    local, old, new = task[key], base.get(key), remote[key]
+                    local, old, new = task[key], base.get(key, '' if key == 'priority' else None), remote[key]
                     if local == new:
                         task['conflicts'].pop(key, None)
                         base[key] = new
@@ -361,18 +443,19 @@ class Workspace:
                         base[key] = new
                 if not task.get('module_local'):
                     task['module'] = record.get('module', task['module'])
-                task['version'] = record.get('version', task['version'])
+                if not task.get('version_local'):
+                    task['version'] = record.get('version', task['version'])
                 task['acceptance'] = record.get('acceptance', '')
-                task['is_requirement'] = record.get('is_requirement', False)
+                task['is_requirement'] = task.get('published_requirement', False) or record.get('is_requirement', False)
                 task['source']['missing'] = False
-                self._put(task)
-        with self.db:
-            self.db.execute('BEGIN IMMEDIATE')
+                if task != before:
+                    self._put(task)
             for rid, task in existing.items():
                 if rid not in seen:
                     current = self._raw(task['id'])
-                    current['source']['missing'] = True
-                    self._put(current)
+                    if not current['source'].get('missing'):
+                        current['source']['missing'] = True
+                        self._put(current)
 
     def resolve(self, task_id, field, choice, revision):
         with self.db:

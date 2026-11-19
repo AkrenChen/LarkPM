@@ -1,0 +1,33 @@
+.main-content .pending-layout{gap:12px}
+.pending-layout .sync-summary{padding:0;border:0;border-radius:0;background:transparent;gap:12px;justify-content:space-between}
+.pending-layout .sync-summary h2{font-size:13px;margin:0 0 3px}.pending-layout .sync-summary p{font-size:11px;line-height:18px}
+.pending-layout .pending-list,.pending-layout .sync-conflicts{padding:0;background:#fff;border:1px solid #e2e6eb;border-radius:6px;overflow:hidden}
+.pending-layout .pending-list>header,.pending-section-heading{display:flex;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px solid #e5e9ed}
+.pending-section-heading h2{display:flex;align-items:center;gap:6px;font-size:12px;color:#976b29}.pending-section-heading>span{font-size:11px;color:#a28c6b}
+.pending-layout .pending-list>header h2{font-size:12px}.pending-layout .pending-list>header span{font-size:10px;color:#929ba6}.pending-layout .pending-list>header .text-button{font-size:11px}
+.pending-table-scroll{overflow:auto}
+.pending-fields,.pending-conflict-table{border-collapse:collapse;table-layout:fixed;width:100%;min-width:780px;font-size:11px;text-align:left}
+.pending-fields th,.pending-fields td,.pending-conflict-table th,.pending-conflict-table td{padding:7px 10px;border-bottom:1px solid #edf0f2;vertical-align:middle;line-height:20px;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pending-fields thead th,.pending-conflict-table thead th{color:#919ba6;background:#fafbfd;font-size:10px;padding-top:5px;padding-bottom:5px}
+.pending-fields thead th:first-child{width:34px}.pending-fields thead th:nth-child(2){width:24%}.pending-fields thead th:nth-child(3){width:27%}
+.pending-fields td{color:#657184}.pending-fields td:nth-child(4){color:#99a1aa}
+.pending-task-name{display:flex;align-items:center;gap:6px;min-width:0}
+.pending-fields .task-title-link,.pending-conflict-table .task-title-link{font-size:12px;line-height:20px;min-width:0;max-width:100%;gap:5px}
+.pending-fields .task-title-link>span,.pending-conflict-table .task-title-link>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pending-fields .task-title-link svg,.pending-conflict-table .task-title-link svg{flex-shrink:0}
+.pending-unavailable{font-size:9px;color:#a28861;flex-shrink:0}
+.pending-field-choices{display:flex;align-items:center;gap:10px;overflow:auto;scrollbar-width:thin;min-height:20px}
+.pending-field-choices>span{flex-shrink:0;font-size:10px}
+.pending-fields input[type=checkbox]{margin:0;vertical-align:middle;width:12px;height:12px}
+.pending-change-values{display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pending-change-values>span{display:inline-flex;align-items:center;gap:2px;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.pending-change-values>span>span:not(.status-pill){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pending-change-values small{font-size:10px;color:#9ba2ad;flex-shrink:0}
+.pending-fields .disabled{background:#fafafb}.pending-fields .disabled .pending-field-choices{color:#9ca3ad}
+.pending-conflict-table thead th:first-child{width:24%}.pending-conflict-table thead th:nth-child(2){width:110px}.pending-conflict-table thead th:last-child{width:150px}
+.pending-conflict-table td{color:#7c694b}.pending-conflict-table .button-row{gap:6px;flex-wrap:nowrap}.pending-conflict-table .button{min-height:26px;padding:3px 6px;font-size:10px}
+.pending-layout tbody:last-child>tr:last-child>*{border-bottom:0}
+.pending-layout .status-pill{font-size:10px;line-height:18px;padding:0 5px}
+
+.local-creations .pending-fields thead th:nth-child(3){width:16%}.local-creations .pending-fields thead th:last-child{width:56px}.local-creations .list-select{width:100%;min-height:26px;padding:3px 6px;font-size:10px}.local-creations .text-button{font-size:11px;white-space:nowrap}
+.ignored-creations{border-top:1px solid #e2e6eb;padding-top:10px;color:#929ba6;font-size:11px}.ignored-creations>summary{cursor:pointer;user-select:none}.ignored-creations>div{margin-top:8px}.ignored-creation{display:flex;align-items:center;gap:12px;padding:6px 10px;border-bottom:1px solid #edf0f2}.ignored-creation>span{max-width:50%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.ignored-creation>small{font-size:10px}.ignored-creation>.text-button{margin-left:auto;font-size:11px}

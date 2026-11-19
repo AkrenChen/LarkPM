@@ -6,14 +6,14 @@ import type { Project, Run, Task } from '../types';
 import Icon from './Icon';
 import { departmentAccent, departmentStyle } from '../departmentColors';
 import './Gantt.css';
+import { compareRequirementNames } from '../workflowLayout';
 
 const DAY = 86400000;
 const epoch = (date: string) => Date.parse(`${date}T00:00:00Z`);
 const label = (time: number) => new Date(time).toISOString().slice(0, 10);
 
 export default function Gantt({ scale, tasks, project, onSelect, run, busy }: { scale: GanttScale; tasks: Task[]; project: Project; onSelect: (id: string) => void; run: Run; busy: boolean }) {
-  const scheduled = tasks.filter(t => t.start && t.end).sort((a, b) => a.start.localeCompare(b.start));
-  const unscheduled = tasks.filter(t => !t.start || !t.end);
+  const unscheduled = tasks.filter(t => (!t.start || !t.end) && !['done', 'closed'].includes(t.state));
   const testCache = project.source_cache?.tests;
   const testRows = testCache?.windows || [];
   const validTests = testRows.filter(t => t.start && t.end && t.end >= t.start);
@@ -23,6 +23,7 @@ export default function Gantt({ scale, tasks, project, onSelect, run, busy }: { 
   const monthStart = (time: number) => { const date = new Date(time); return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1); };
   const min = scale === 'month' ? monthStart(anchor) : anchor;
   const max = scale === 'month' ? Date.UTC(new Date(min).getUTCFullYear(), new Date(min).getUTCMonth() + 1, 1) : min + (scale === 'fortnight' ? 14 : 7) * DAY;
+  const scheduled = tasks.filter(t => t.start && t.end && epoch(t.start) < max && epoch(t.end) + DAY > min).sort((a, b) => a.start.localeCompare(b.start));
   const days = (max - min) / DAY, rowHeight = 32;
   const scaleNames = { week: '周', fortnight: '双周', month: '月' };
   const shift = (direction: number) => setAnchor(scale === 'month' ? Date.UTC(new Date(min).getUTCFullYear(), new Date(min).getUTCMonth() + direction, 1) : min + direction * days * DAY);
@@ -32,15 +33,18 @@ export default function Gantt({ scale, tasks, project, onSelect, run, busy }: { 
   const tests = validTests.filter(test => !isReleasedTest(test, project) && epoch(test.start) < max && epoch(test.end) + DAY > min);
   const names = Array.from(new Set(scheduled.map(t => t.module || '未归类')));
   const columns = project.workflow_columns || [];
-  const priority = { high: 0, medium: 1, low: 2, '': 3 };
-  names.sort((a, b) => priority[columns.find(c => c.name === a)?.priority || ''] - priority[columns.find(c => c.name === b)?.priority || '']);
+  names.sort(compareRequirementNames(tasks, columns));
   type Row = { key: string; kind: 'collapsed'; name: string } | { key: string; kind: 'task'; task: Task };
   const rows: Row[] = [];
   const groups = names.map(name => {
     const members = scheduled.filter(t => (t.module || '未归类') === name), start = rows.length;
     if (collapsed.has(name)) rows.push({ key: `group-${name}`, kind: 'collapsed', name });
     else rows.push(...members.map(task => ({ key: task.id, kind: 'task' as const, task })));
-    return { name, start, size: rows.length - start, count: members.length };
+    const firstTask = members[0];
+    const aggregateStart = members.reduce((value, task) => value < task.start ? value : task.start, firstTask?.start || '');
+    const aggregateEnd = members.reduce((value, task) => value > task.end ? value : task.end, firstTask?.end || '');
+    const color = project.department_catalog?.options.find(option => option.name === (firstTask?.departments[0] || ''))?.color;
+    return { name, start, size: rows.length - start, count: members.length, firstTask, aggregateStart, aggregateEnd, color };
   });
   const percent = (date: string) => (epoch(date) - min) / (days * DAY) * 100;
   const interval = (start: string, end: string) => {
@@ -68,14 +72,19 @@ export default function Gantt({ scale, tasks, project, onSelect, run, busy }: { 
     {targets.filter(([, date]) => epoch(date) >= min && epoch(date) < max).map(([v, date]) => <div className="target-line" key={v} style={{ left: `${percent(date)}%` }} title={`${v} 目标 ${date}`}><span>{v}</span></div>)}
     <svg className="dependency-lines" width="100%" height={rows.length * rowHeight} viewBox={`0 0 100 ${Math.max(1, rows.length * rowHeight)}`} preserveAspectRatio="none" aria-label="任务依赖连线">{connections.map(c => <path key={c.key} d={c.d} fill="none" stroke={c.invalid ? '#d88e34' : '#a0a6af'} strokeWidth="1" vectorEffect="non-scaling-stroke" strokeDasharray={c.invalid ? '4 3' : undefined}/>)}</svg>
     {rows.map((row, index) => {
-      if (row.kind === 'collapsed') return null;
+      if (row.kind === 'collapsed') {
+        const group = groups.find(item => item.start === index);
+        const position = group && interval(group.aggregateStart, group.aggregateEnd);
+        if (!group || !position) return null;
+        return <div key={row.key} className="gantt-requirement-summary-bar" style={{ ...position, top: index * rowHeight + 6, ...departmentStyle(group.color, group.firstTask?.departments[0] || ''), borderColor: departmentAccent(group.color, group.firstTask?.departments[0] || '') }} title={`${group.name}\n${group.aggregateStart} → ${group.aggregateEnd}`} aria-label={`${group.name}总排期，${group.aggregateStart}至${group.aggregateEnd}`} />;
+      }
       const position = interval(row.task.start, row.task.end);
       if (!position) return null;
       const task = row.task, department = task.departments[0] || '', color = project.department_catalog?.options.find(option => option.name === department)?.color;
-      return <button key={row.key} className={`gantt-bar ${task.state} ${project.targets?.[task.version] && task.end > project.targets[task.version] ? 'over-target' : ''}`} style={{ ...position, top: index * rowHeight + 6, ...departmentStyle(color, department), borderColor: departmentAccent(color, department) }} onClick={() => onSelect(task.id)} title={`${task.title}\n${task.departments.join(' / ')}\n${task.start} → ${task.end}`} aria-label={`${task.title}，${task.start}至${task.end}`}><span>{task.title}</span></button>;
+      return <button key={row.key} className={`gantt-bar ${task.state} ${project.targets?.[task.version] && task.end > project.targets[task.version] ? 'over-target' : ''}`} style={{ ...position, top: index * rowHeight + 6, ...departmentStyle(color, department), borderColor: departmentAccent(color, department) }} onClick={() => onSelect(task.id)} title={`${task.title}\n${task.owners.map(owner => owner.name || owner.id).join(' / ')}\n${task.departments.join(' / ')}\n${task.start} → ${task.end}`} aria-label={`${task.title}，${task.start}至${task.end}`}><span>{task.owners.map(owner => owner.name || owner.id).join(' / ') || `${Math.max(1, Math.round((epoch(task.end) - epoch(task.start)) / DAY) + 1)}天`}</span></button>;
     })}</div></div></div></div>
     {!rows.length && <div className="empty"><p>暂无完整排期。为任务填写开始与截止时间后显示。</p></div>}
-    <footer>排期条按部门配色；紫色为本项目测试。点击需求名称可折叠任务。</footer>{project.sources?.tests && <div className="gantt-test-note"><button className="text-button" disabled={busy} onClick={() => void run('project_sources_sync', { project: project.id }, '关联表读取完成')}>刷新测试排期</button> · {testCache?.updated_at ? `更新于 ${new Date(testCache.updated_at).toLocaleString('zh-CN')}` : '尚未读取'}{!testRows.length && testCache?.updated_at && ' · 未找到本项目测试排期'}{testRows.length > validTests.length && ` · ${testRows.length - validTests.length} 条日期缺失或倒置，未推测工期`}{testCache?.error && <p className="source-error" role="alert">{testCache.error}；已保留上次结果</p>}</div>}</section>
+    <footer>排期条按部门配色；紫色为本项目测试。点击需求名称可折叠任务。</footer>{project.sources?.tests && <div className="gantt-test-note"><button className="text-button" disabled={busy} onClick={() => void run('project_sources_refresh', { project: project.id, kinds: ['tests'] }, '测试排期正在后台更新')}>刷新测试排期</button> · {testCache?.updated_at ? `更新于 ${new Date(testCache.updated_at).toLocaleString('zh-CN')}` : '尚未读取'}{!testRows.length && testCache?.updated_at && ' · 未找到本项目测试排期'}{testRows.length > validTests.length && ` · ${testRows.length - validTests.length} 条日期缺失或倒置，未推测工期`}{testCache?.error && <p className="source-error" role="alert">{testCache.error}；已保留上次结果</p>}</div>}</section>
     <section className="unscheduled"><header><h2>待排期</h2><span className="badge">{unscheduled.length}</span><p>缺少开始或截止时间，不推测工期。</p></header>{unscheduled.length ? <div className="unscheduled-grid">{unscheduled.map(task => <button key={task.id} onClick={() => onSelect(task.id)}><Icon name="calendar" size={16}/><span><strong>{task.title}</strong><small>{task.module || '未归类'} · {task.start ? '缺截止时间' : task.end ? '缺开始时间' : '尚未排期'}</small></span><Icon name="chevron" size={14}/></button>)}</div> : <p className="muted">当前筛选下的工作项均已有排期。</p>}</section>
   </div>;
 }

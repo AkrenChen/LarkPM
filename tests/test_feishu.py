@@ -5,6 +5,9 @@ import tempfile
 import time
 import unittest
 import socket
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import patch
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from urllib.error import HTTPError
@@ -30,6 +33,26 @@ class FeishuTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+
+    def test_http_ignores_unavailable_system_proxy(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"code":0}')
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        self.addCleanup(server.server_close)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.shutdown)
+        client, _ = self.client()
+        with patch('urllib.request.getproxies', return_value={'http': 'http://127.0.0.1:1'}), patch('urllib.request.proxy_bypass', return_value=False):
+            result = client._http('GET', f'http://127.0.0.1:{server.server_port}/', {}, None)
+        self.assertEqual(result, {'code': 0})
 
     def client(self, responses=(), **options):
         transport = FakeTransport(responses)
@@ -118,13 +141,59 @@ class FeishuTests(unittest.TestCase):
                                         'done': 'Shipped', 'paused': 'Held', 'closed': 'Closed'}})
         self.assertEqual(client.records()[0]['state'], 'done')
 
-    def test_write_only_selected_fields_and_never_acceptance(self):
+    def test_write_only_selected_fields(self):
         client, http = self.client([{'code': 0, 'data': {'record': {
             'record_id': 'rec1', 'fields': {'需求内容': 'Changed', '开发状态': '已完成'}}}}])
         result = client.update('rec1', {'title': 'Changed', 'state': 'done'})
         self.assertEqual(http.calls[0][0], 'PUT')
         self.assertEqual(http.calls[0][3], {'fields': {'需求内容': 'Changed', '开发状态': '已完成'}})
         self.assertEqual(result['state'], 'done')
+
+    def test_create_record_uses_uuid_idempotency_and_requires_record_id(self):
+        token = 'fe599b60-450f-46ff-b2ef-9f6675625b97'
+        client, http = self.client([{'code': 0, 'data': {'record': {'record_id': 'new', 'fields': {'需求内容': '新需求'}}}}, {'code': 0, 'data': {}}])
+        result = client.create_record({'需求内容': '新需求'}, token)
+        self.assertEqual(result['record_id'], 'new')
+        self.assertEqual(http.calls[0][0], 'POST')
+        self.assertIn('client_token=' + token, http.calls[0][1])
+        self.assertEqual(http.calls[0][3], {'fields': {'需求内容': '新需求'}})
+        with self.assertRaisesRegex(FeishuError, '记录ID'):
+            client.create_record({'需求内容': '新需求'}, token)
+        before = len(http.calls)
+        with self.assertRaises(FeishuError):
+            client.create_record({'需求内容': '新需求'}, 'invalid')
+        self.assertEqual(len(http.calls), before)
+
+    def test_creation_schema_maps_dates_people_version_department_and_parent(self):
+        from remote import Remote
+        fields = [dict(field_id='fld' + str(i), field_name=name, type=kind, property=prop) for i, (name, kind, prop) in enumerate([
+            ('标题', 1, {}), ('开发状态', 3, {'options': [{'name': '进行中'}, {'name': '未开始'}]}),
+            ('开始时间', 5, {}), ('截止时间', 5, {}), ('处理人', 11, {'multiple': True}),
+            ('版本', 4, {'options': [{'name': 'v1'}]}), ('部门', 3, {'options': [{'name': '开发'}]}),
+            ('父记录', 18, {'table_id': 'tbl_example'})])]
+        client, http = self.client([{'code': 0, 'data': {'items': fields}}, {'code': 0, 'data': {'record': {'record_id': 'new', 'fields': {'标题': '任务'}}}}])
+        remote = Remote.__new__(Remote)
+        remote.client = client
+        project = dict(base_token='base_example', table_id='tbl_example', fields=dict(title='fld0', state='开发状态', start='开始时间', end='截止时间', owners='处理人', parent='父记录', version='版本', department='部门'))
+        values = dict(title='任务', state='active', start='2026-11-05', end='', owners=[{'id': 'ou_1', 'name': '人名'}], version='v1', departments=['开发'], parent_id='recParent')
+        remote.prepare_create(project, [values])
+        remote.create(project, values, 'fe599b60-450f-46ff-b2ef-9f6675625b97')
+        self.assertEqual(http.calls[-1][3]['fields'], {'标题': '任务', '开发状态': '进行中', '开始时间': 1793808000000, '处理人': [{'id': 'ou_1'}], '版本': ['v1'], '部门': '开发', '父记录': ['recParent']})
+        before = len(http.calls)
+        for patch in [dict(version='unknown'), dict(departments=['开发', 'UI'])]:
+            with self.assertRaises(ValueError):
+                remote.create(project, dict(values, **patch), 'fe599b60-450f-46ff-b2ef-9f6675625b97')
+        remote._creation_fields['parent_id']['type'] = 19
+        with self.assertRaisesRegex(ValueError, 'parent_id'):
+            remote.create(project, values, 'fe599b60-450f-46ff-b2ef-9f6675625b97')
+        self.assertEqual(len(http.calls), before)
+
+    def test_explicit_acceptance_write_uses_mapped_field_only(self):
+        client, http = self.client([{'code': 0, 'data': {'record': {
+            'record_id': 'rec1', 'fields': {'Review': '验收通过'}}}}])
+        client.configure({'field_map': {'acceptance': 'Review'}})
+        self.assertEqual(client.update('rec1', {'acceptance': '验收通过'})['acceptance'], '验收通过')
+        self.assertEqual(http.calls[0][3], {'fields': {'Review': '验收通过'}})
 
     def test_write_people_and_date_clears_use_rest_shapes(self):
         client, http = self.client([{'code': 0, 'data': {'record': {'record_id': 'rec1', 'fields': {}}}}])
@@ -136,7 +205,7 @@ class FeishuTests(unittest.TestCase):
 
     def test_rejects_unsupported_fields_bad_dates_and_owner_without_id(self):
         client, http = self.client()
-        for changes in ({'acceptance': '验收通过'}, {'end': '2026-02-30'},
+        for changes in ({'acceptance': 'invented'}, {'description': 'private'}, {'end': '2026-02-30'},
                         {'owners': [{'name': 'Name'}]}, {'state': 'invented'}):
             with self.subTest(changes=changes), self.assertRaises(FeishuError):
                 client.update('rec1', changes)

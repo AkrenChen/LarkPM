@@ -122,6 +122,21 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(current['end'], '2026-11-09')
         self.assertEqual(current['conflicts']['title']['remote'], '远端标题')
 
+    def test_task_version_override_survives_remote_read_but_unedited_version_tracks_source(self):
+        row = dict(record_id='rec1', title='task', state='todo', owners=[], version='v1')
+        self.w.merge_remote([row], 'base/table')
+        task = self.w.snapshot()['tasks'][0]
+        self.w.merge_remote([dict(row, version='v2')], 'base/table')
+        task = self.w.get(task['id'])
+        self.assertEqual(task['version'], 'v2')
+        self.w.edit(task['id'], {'version': 'v3'}, task['revision'])
+        self.w.merge_remote([dict(row, version='v4')], 'base/table')
+        self.assertEqual(self.w.get(task['id'])['version'], 'v3')
+        task = self.w.get(task['id'])
+        self.w.edit(task['id'], {'version': ''}, task['revision'])
+        self.w.merge_remote([row], 'base/table')
+        self.assertEqual(self.w.get(task['id'])['version'], '')
+
     def test_rule_candidates_allow_cutting_in_parallel_with_ui_when_prototypes_exist(self):
         doc = self.task('需求文档', module='新系统')
         ui = self.task('UI绘制', module='新系统')

@@ -22,6 +22,9 @@ class Remote:
         self.writes.append((config['table_id'], record_id, patch))
         self.rows[0].update(patch)
 
+    def accept(self, config, record_id):
+        self.update(config, record_id, {'acceptance': '验收通过'})
+
 
 class ServiceTests(unittest.TestCase):
     def setUp(self):
@@ -40,6 +43,63 @@ class ServiceTests(unittest.TestCase):
         self.s.call('project_save', dict(self.p, name='新项目名称'))
         self.assertEqual(self.s.project(self.p['id'])['workflow_columns'], [column])
         self.assertEqual(self.remote.writes, [])
+
+    def test_accept_writes_only_acceptance_then_sync_preserves_it(self):
+        task = self.s.w.snapshot(self.p['id'])['tasks'][0]
+        task = self.s.w.edit(task['id'], {'title': 'local title'}, task['revision'])
+        accepted = self.s.call('task_accept', dict(id=task['id'], revision=task['revision']))
+        self.assertEqual(accepted['acceptance'], '验收通过')
+        self.assertEqual(self.remote.writes, [('tblABC', 'rec1', {'acceptance': '验收通过'})])
+        self.assertEqual(set(accepted['pending']), {'title'})
+        self.s.sync(self.p['id'])
+        self.assertEqual(self.s.w.get(task['id'])['acceptance'], '验收通过')
+
+    def test_accept_failure_stale_revision_and_missing_source_do_not_mark_local(self):
+        task = self.s.w.snapshot(self.p['id'])['tasks'][0]
+        with self.assertRaises(ValueError):
+            self.s.call('task_accept', dict(id=task['id'], revision=task['revision'] - 1))
+        self.assertFalse(self.remote.writes)
+        def fail(*args):
+            raise ValueError('write denied')
+        self.remote.accept = fail
+        with self.assertRaisesRegex(ValueError, 'write denied'):
+            self.s.call('task_accept', dict(id=task['id'], revision=task['revision']))
+        self.assertNotEqual(self.s.w.get(task['id']).get('acceptance'), '验收通过')
+        self.remote.rows = []
+        self.s.sync(self.p['id'])
+        task = self.s.w.get(task['id'])
+        with self.assertRaisesRegex(ValueError, '来源记录不可用'):
+            self.s.call('task_accept', dict(id=task['id'], revision=task['revision']))
+
+    def test_local_task_accept_never_calls_remote(self):
+        task = self.s.w.create(dict(project=self.p['id'], title='local'))
+        accepted = self.s.call('task_accept', dict(id=task['id'], revision=task['revision']))
+        self.assertEqual(accepted['acceptance'], '验收通过')
+        self.assertFalse(self.remote.writes)
+
+    def test_archive_restore_and_delete_project_are_local_and_isolated(self):
+        task = self.s.w.snapshot(self.p['id'])['tasks'][0]
+        task = self.s.w.link(task['id'], task['revision'])
+        self.s.w.note(task['id'], 'private', 0)
+        other = self.s.save_project(dict(name='other', base_token='base2', table_id='tbl2'))
+        retained = self.s.w.create(dict(title='keep', project=other['id']))
+        retained = self.s.w.link(retained['id'], retained['revision'])
+        self.s.w.note(retained['id'], 'keep note', 0)
+        self.s.call('project_archive', dict(project=self.p['id'], archived=True))
+        self.assertTrue(self.s.project(self.p['id'])['archived'])
+        self.assertEqual(self.s.w.get(task['id'])['title'], task['title'])
+        self.s.call('project_archive', dict(project=self.p['id'], archived=False))
+        self.assertFalse(self.s.project(self.p['id'])['archived'])
+        with self.assertRaises(ValueError):
+            self.s.call('project_delete', dict(project=self.p['id']))
+        self.s.w.remove_local(task['id'], task['revision'])
+        self.s.call('project_delete', dict(project=self.p['id'], confirmed=True))
+        self.assertFalse(self.s.w._all(self.p['id'], include_removed=True))
+        self.assertIsNone(self.s.w.db.execute('SELECT id FROM notes WHERE id=?', (task['id'],)).fetchone())
+        self.assertEqual(self.s.w.get(retained['id'])['title'], 'keep')
+        self.assertIsNotNone(self.s.w.db.execute('SELECT id FROM notes WHERE id=?', (retained['id'],)).fetchone())
+        self.assertEqual([p['id'] for p in self.s.w.projects()], [other['id']])
+        self.assertFalse(self.remote.writes)
 
     def test_only_selected_fields_written_and_unselected_changes_remain_pending(self):
         t = self.s.call('snapshot', {'project': self.p['id']})['tasks'][0]
