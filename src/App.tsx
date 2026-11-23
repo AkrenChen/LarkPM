@@ -137,7 +137,7 @@ export default function App() {
   return <div className="app-shell">
     <a className="skip-link" href="#workspace-main">跳到工作区</a>
     <aside className="sidebar">
-      <div className="brand"><div className="brand-symbol"><span/><span/><span/></div><div><strong>LarkPM</strong><span>需求工作台</span></div><span className="version-tag">1.0.7</span></div>
+      <div className="brand"><div className="brand-symbol"><span/><span/><span/></div><div><strong>LarkPM</strong><span>需求工作台</span></div><span className="version-tag">1.0.8</span></div>
       <div className="project-switch"><label htmlFor="project-selector">当前项目</label><ListSelect aria-label="当前项目" id="project-selector" value={projectId} onChange={e => setProjectId(e.target.value)} disabled={busy}>
         {!activeProjects.length && <option value="">尚未配置项目</option>}{activeProjects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}
       </ListSelect><button className="text-button" onClick={openConnections}>管理项目连接 <span>↗</span></button></div>

@@ -303,11 +303,17 @@ class Workspace:
     def projects(self):
         return [json.loads(row[0]) for row in self.db.execute('SELECT body FROM projects')]
 
+    @staticmethod
+    def require_delivered(task):
+        if task['state'] != 'done':
+            raise ValueError('请先将任务标记为“交付就绪”，再标记验收通过')
+
     def set_acceptance(self, task_id, revision):
         with self.db:
             self.db.execute('BEGIN IMMEDIATE')
             task = self._raw(task_id)
             self._check(task, revision)
+            self.require_delivered(task)
             task['acceptance'] = '验收通过'
             self._put(task)
         return self.get(task_id)

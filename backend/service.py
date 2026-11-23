@@ -244,6 +244,7 @@ class Service:
         if method == 'task_accept':
             task = self.w.get(p['id'])
             self.w._check(task, p['revision'])
+            self.w.require_delivered(task)
             project = self.project(task['project'])
             if task.get('source'):
                 source = task['source']

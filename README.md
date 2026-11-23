@@ -16,7 +16,7 @@ Windows 桌面需求工作台，连接可配置的飞书多维表格，提供需
 
 ## 安装与使用
 
-当前版本：**1.0.7**。运行 `LarkPM_1.0.7_x64-setup.exe`，或完整解压便携包并运行 `LarkPM.exe`。便携包需保留同目录的 `sidecar/larkpm-backend.exe`。系统需要 Microsoft Edge WebView2 Runtime。
+当前版本：**1.0.8**。运行 `LarkPM_1.0.8_x64-setup.exe`，或完整解压便携包并运行 `LarkPM.exe`。便携包需保留同目录的 `sidecar/larkpm-backend.exe`。系统需要 Microsoft Edge WebView2 Runtime。
 
 1. 打开“设置 → 项目与连接”，填写需求表链接或 Base Token、Table ID。
 2. 按表结构配置标题、起止时间、处理人、工作状态等字段；优先级默认对应“优先级”字段。

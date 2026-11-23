@@ -45,6 +45,8 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.remote.writes, [])
 
     def test_accept_writes_only_acceptance_then_sync_preserves_it(self):
+        self.remote.rows[0]['state'] = 'done'
+        self.s.sync(self.p['id'])
         task = self.s.w.snapshot(self.p['id'])['tasks'][0]
         task = self.s.w.edit(task['id'], {'title': 'local title'}, task['revision'])
         accepted = self.s.call('task_accept', dict(id=task['id'], revision=task['revision']))
@@ -55,6 +57,8 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.s.w.get(task['id'])['acceptance'], '验收通过')
 
     def test_accept_failure_stale_revision_and_missing_source_do_not_mark_local(self):
+        self.remote.rows[0]['state'] = 'done'
+        self.s.sync(self.p['id'])
         task = self.s.w.snapshot(self.p['id'])['tasks'][0]
         with self.assertRaises(ValueError):
             self.s.call('task_accept', dict(id=task['id'], revision=task['revision'] - 1))
@@ -72,10 +76,31 @@ class ServiceTests(unittest.TestCase):
             self.s.call('task_accept', dict(id=task['id'], revision=task['revision']))
 
     def test_local_task_accept_never_calls_remote(self):
-        task = self.s.w.create(dict(project=self.p['id'], title='local'))
+        task = self.s.w.create(dict(project=self.p['id'], title='local', state='done'))
         accepted = self.s.call('task_accept', dict(id=task['id'], revision=task['revision']))
         self.assertEqual(accepted['acceptance'], '验收通过')
         self.assertFalse(self.remote.writes)
+
+    def test_accept_requires_delivery_before_remote_write_for_every_other_state(self):
+        task = self.s.w.snapshot(self.p['id'])['tasks'][0]
+        for state in ('todo', 'active', 'paused', 'closed'):
+            with self.subTest(state=state):
+                task = self.s.w.edit(task['id'], {'state': state}, task['revision'])
+                before = self.s.w.get(task['id'])
+                with self.assertRaisesRegex(ValueError, '交付就绪'):
+                    self.s.call('task_accept', {'id': task['id'], 'revision': task['revision']})
+                self.assertEqual(self.s.w.get(task['id']), before)
+                self.assertFalse(self.remote.writes)
+
+    def test_direct_local_acceptance_requires_delivery_too(self):
+        task = self.s.w.create(dict(project=self.p['id'], title='local'))
+        for state in ('todo', 'active', 'paused', 'closed'):
+            task = self.s.w.edit(task['id'], {'state': state}, task['revision'])
+            with self.subTest(state=state), self.assertRaisesRegex(ValueError, '交付就绪'):
+                self.s.w.set_acceptance(task['id'], task['revision'])
+            self.assertNotEqual(self.s.w.get(task['id'])['acceptance'], '验收通过')
+        task = self.s.w.edit(task['id'], {'state': 'done'}, task['revision'])
+        self.assertEqual(self.s.w.set_acceptance(task['id'], task['revision'])['acceptance'], '验收通过')
 
     def test_archive_restore_and_delete_project_are_local_and_isolated(self):
         task = self.s.w.snapshot(self.p['id'])['tasks'][0]
